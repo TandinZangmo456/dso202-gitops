@@ -47,13 +47,13 @@ A release called "task-tracker" gives "task-tracker", not "task-tracker-task-tra
 {{- printf "%s-frontend" (include "tasktracker.fullname" .) }}
 {{- end }}
 
-{{/* tasktracker.secretName: the chart's own Secret, or an existing one. */}}
+{{/*
+tasktracker.secretName: the Secret that holds the database credentials.
+Contract C3: the chart never renders a Secret. In Assignment 4 the Secret is
+created by the Sealed Secrets controller from a SealedSecret in platform/<env>/.
+*/}}
 {{- define "tasktracker.secretName" -}}
-{{- if .Values.credentials.existingSecret }}
-{{- .Values.credentials.existingSecret }}
-{{- else }}
-{{- printf "%s-secret" (include "tasktracker.fullname" .) }}
-{{- end }}
+{{- required "credentials.existingSecret must name a Secret with DB_USER, DB_PASSWORD, POSTGRES_USER and POSTGRES_PASSWORD" .Values.credentials.existingSecret }}
 {{- end }}
 
 {{/*

@@ -17,10 +17,9 @@ spec:
       labels:
         {{- include "tasktracker.labels" $tier | nindent 8 }}
       annotations:
-        # Changing the ConfigMap or Secret changes these hashes, so the
-        # Pod template changes and the Deployment rolls out.
+        # Changing the ConfigMap changes this hash, so the Pod template
+        # changes and the Deployment rolls out.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
     spec:
       containers:
         - name: postgres
