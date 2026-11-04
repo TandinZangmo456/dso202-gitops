@@ -1,0 +1,38 @@
+# =============================================================================
+# File        : platform/staging/rbac.yaml
+# Assignment  : DSO202 Assignment 4 (objects from Assignment 2)
+# Descriptor  : Unit II 2.3 - Kubernetes RBAC
+# Purpose     : Read-only Role for the Task Tracker objects in dso202-staging,
+#               bound to the 'task-tracker-readers' group (the O= field of the
+#               client certificate made in Assignment 2). This is Kubernetes
+#               RBAC; Argo CD has its own, separate RBAC (Task 6).
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: task-reader
+  namespace: dso202-staging
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: task-reader-binding
+  namespace: dso202-staging
+subjects:
+  - kind: Group
+    name: task-tracker-readers      # matches O= in the Assignment 2 certificate
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: task-reader
+  apiGroup: rbac.authorization.k8s.io
