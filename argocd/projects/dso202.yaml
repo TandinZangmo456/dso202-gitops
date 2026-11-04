@@ -53,3 +53,13 @@ spec:
       kind: PersistentVolumeClaim
     - group: batch
       kind: Job
+    # Added in Task 6: Argo CD omits from the resource tree any child whose kind
+    # the project does not permit, so without these two lines the ReplicaSets
+    # and Pods of each Deployment are hidden and no Pod logs can be opened in
+    # the UI, even with the logs RBAC rule. The chart renders neither kind, so
+    # they are only needed for visibility. The cost is that a commit could now
+    # also create a bare Pod or ReplicaSet in the two app namespaces.
+    - group: apps
+      kind: ReplicaSet
+    - group: ""
+      kind: Pod
