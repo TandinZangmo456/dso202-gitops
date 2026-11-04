@@ -7,8 +7,14 @@ metadata:
   name: {{ include "tasktracker.backendName" . }}
   labels:
     {{- include "tasktracker.labels" $tier | nindent 4 }}
+  annotations:
+    # Contract C5: wave 1, after the database (0) and before the frontend (2).
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   replicas: {{ .Values.backend.replicaCount }}
+  # Contract C6: a rollout that makes no progress for 120 seconds is reported
+  # as failed (Argo CD shows Degraded), instead of after the default 600.
+  progressDeadlineSeconds: 120
   selector:
     matchLabels:
       {{- include "tasktracker.selectorLabels" $tier | nindent 6 }}
@@ -46,5 +52,9 @@ spec:
             # Extra variables from values (contract C2)
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          # Contract C4: GET /api/status answers 200 only when the database
+          # connection works, so the backend is ready only with a database.
+          readinessProbe:
+            {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}

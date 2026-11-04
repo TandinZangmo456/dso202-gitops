@@ -2,112 +2,279 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "tasktracker values",
   "type": "object",
-  "required": ["environment", "image", "config", "credentials", "database", "backend", "frontend"],
+  "required": [
+    "environment",
+    "image",
+    "config",
+    "credentials",
+    "database",
+    "backend",
+    "frontend"
+  ],
   "properties": {
-    "environment": { "enum": ["", "dev", "prod"] },
+    "environment": {
+      "enum": [
+        "",
+        "dev",
+        "prod"
+      ]
+    },
     "image": {
       "type": "object",
-      "required": ["pullPolicy"],
+      "required": [
+        "pullPolicy"
+      ],
       "additionalProperties": false,
       "properties": {
-        "pullPolicy": { "enum": ["IfNotPresent", "Never"] }
+        "pullPolicy": {
+          "enum": [
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
     "config": {
       "type": "object",
-      "required": ["dbName", "dbPort", "appPort", "corsOrigin"],
+      "required": [
+        "dbName",
+        "dbPort",
+        "appPort",
+        "corsOrigin"
+      ],
       "properties": {
-        "dbName": { "type": "string", "minLength": 1 },
-        "dbPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "appPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "corsOrigin": { "type": "string", "minLength": 1 }
+        "dbName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dbPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "appPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "corsOrigin": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "credentials": {
       "type": "object",
-      "required": ["existingSecret"],
+      "required": [
+        "existingSecret"
+      ],
       "additionalProperties": false,
       "properties": {
-        "existingSecret": { "type": "string", "minLength": 1 }
+        "existingSecret": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "database": {
       "type": "object",
-      "required": ["image", "resources", "persistence"],
+      "required": [
+        "image",
+        "resources",
+        "persistence",
+        "readinessProbe"
+      ],
       "properties": {
-        "image": { "$ref": "#/$defs/image" },
-        "extraEnv": { "$ref": "#/$defs/extraEnv" },
-        "resources": { "$ref": "#/$defs/resources" },
+        "image": {
+          "$ref": "#/$defs/image"
+        },
+        "extraEnv": {
+          "$ref": "#/$defs/extraEnv"
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
         "persistence": {
           "type": "object",
-          "required": ["size"],
+          "required": [
+            "size"
+          ],
           "properties": {
-            "size": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" },
-            "storageClass": { "type": "string" }
+            "size": {
+              "type": "string",
+              "pattern": "^[0-9]+(Mi|Gi)$"
+            },
+            "storageClass": {
+              "type": "string"
+            }
           }
+        },
+        "readinessProbe": {
+          "type": "object",
+          "minProperties": 1
         }
       }
     },
     "backend": {
       "type": "object",
-      "required": ["image", "replicaCount", "resources", "service"],
+      "required": [
+        "image",
+        "replicaCount",
+        "resources",
+        "service",
+        "readinessProbe"
+      ],
       "properties": {
-        "image": { "$ref": "#/$defs/image" },
-        "extraEnv": { "$ref": "#/$defs/extraEnv" },
-        "replicaCount": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "resources": { "$ref": "#/$defs/resources" },
+        "image": {
+          "$ref": "#/$defs/image"
+        },
+        "extraEnv": {
+          "$ref": "#/$defs/extraEnv"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
         "service": {
           "type": "object",
-          "required": ["port"],
+          "required": [
+            "port"
+          ],
           "additionalProperties": false,
-          "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "readinessProbe": {
+          "type": "object",
+          "minProperties": 1
         }
       }
     },
     "frontend": {
       "type": "object",
-      "required": ["image", "replicaCount", "resources", "service"],
+      "required": [
+        "image",
+        "replicaCount",
+        "resources",
+        "service",
+        "readinessProbe"
+      ],
       "properties": {
-        "image": { "$ref": "#/$defs/image" },
-        "extraEnv": { "$ref": "#/$defs/extraEnv" },
-        "replicaCount": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "resources": { "$ref": "#/$defs/resources" },
+        "image": {
+          "$ref": "#/$defs/image"
+        },
+        "extraEnv": {
+          "$ref": "#/$defs/extraEnv"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
         "service": {
           "type": "object",
-          "required": ["port", "nodePort"],
+          "required": [
+            "port",
+            "nodePort"
+          ],
           "properties": {
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "nodePort": { "type": "integer", "minimum": 30000, "maximum": 32767 }
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "nodePort": {
+              "type": "integer",
+              "minimum": 30000,
+              "maximum": 32767
+            }
           }
+        },
+        "readinessProbe": {
+          "type": "object",
+          "minProperties": 1
         }
       }
     },
-    "nameOverride": { "type": "string" },
-    "fullnameOverride": { "type": "string" }
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    }
   },
   "$defs": {
     "image": {
       "type": "object",
-      "required": ["repository", "tag"],
+      "required": [
+        "repository",
+        "tag"
+      ],
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string", "minLength": 1, "not": { "enum": ["latest", "stable"] } }
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "enum": [
+              "latest",
+              "stable"
+            ]
+          }
+        }
       }
     },
     "extraEnv": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name"],
-        "properties": { "name": { "type": "string", "minLength": 1 } }
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "resources": {
       "type": "object",
-      "required": ["requests", "limits"],
+      "required": [
+        "requests",
+        "limits"
+      ],
       "properties": {
-        "requests": { "type": "object", "required": ["cpu", "memory"] },
-        "limits": { "type": "object", "required": ["cpu", "memory"] }
+        "requests": {
+          "type": "object",
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        }
       }
     }
   }

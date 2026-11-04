@@ -37,6 +37,13 @@ database:
     repository: penguintandinzangmo/dso202-db
     tag: "1.0"
   extraEnv: []
+  # Contract C4. pg_isready checks that PostgreSQL accepts connections; the
+  # variables are expanded by the shell inside the container.
+  readinessProbe:
+    exec:
+      command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+    initialDelaySeconds: 5
+    periodSeconds: 5
   resources:
     requests:
       cpu: 100m
@@ -53,6 +60,13 @@ backend:
     repository: penguintandinzangmo/dso202-backend
     tag: "1.0"
   extraEnv: []
+  # Contract C4: /api/status returns 503 while the database is unreachable.
+  readinessProbe:
+    httpGet:
+      path: /api/status
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
   replicaCount: 1
   resources:
     requests:
@@ -69,6 +83,13 @@ frontend:
     repository: penguintandinzangmo/dso202-frontend
     tag: "1.0"
   extraEnv: []
+  # Contract C4: nginx serves the page.
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 2
+    periodSeconds: 5
   replicaCount: 1
   resources:
     requests:

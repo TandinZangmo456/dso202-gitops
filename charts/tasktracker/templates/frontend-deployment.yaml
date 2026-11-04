@@ -5,8 +5,13 @@ metadata:
   name: {{ include "tasktracker.frontendName" . }}
   labels:
     {{- include "tasktracker.labels" $tier | nindent 4 }}
+  annotations:
+    # Contract C5: wave 2, the last tier; it needs the backend to be ready.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
+  # Contract C6: report a stuck rollout after 120 seconds, not 600.
+  progressDeadlineSeconds: 120
   selector:
     matchLabels:
       {{- include "tasktracker.selectorLabels" $tier | nindent 6 }}
@@ -35,5 +40,8 @@ spec:
             # Extra variables from values (contract C2)
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          # Contract C4: ready when nginx serves the page.
+          readinessProbe:
+            {{- toYaml .Values.frontend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}

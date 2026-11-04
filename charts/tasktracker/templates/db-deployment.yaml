@@ -5,8 +5,12 @@ metadata:
   name: {{ include "tasktracker.dbName" . }}
   labels:
     {{- include "tasktracker.labels" $tier | nindent 4 }}
+  annotations:
+    # Contract C5: wave 0. Argo CD waits for the database to be Healthy
+    # (readiness probe passing) before it applies the backend in wave 1.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
-  replicas: 1                     # fixed: one ReadWriteOnce volume, one Pod
+  replicas: 1                    # fixed: one ReadWriteOnce volume, one Pod
   strategy:
     type: Recreate                # the old Pod must release the volume first
   selector:
@@ -49,6 +53,9 @@ spec:
             # Extra variables from values (contract C2)
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          # Contract C4: ready only when PostgreSQL accepts connections.
+          readinessProbe:
+            {{- toYaml .Values.database.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.database.resources | nindent 12 }}
           volumeMounts:
