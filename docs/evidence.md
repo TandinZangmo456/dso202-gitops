@@ -1225,3 +1225,111 @@ window.__CONFIG__ = {
 };
 ```
 
+
+## Task 6
+
+### Accounts (step 1)
+
+```text
+$ argocd account list
+NAME      ENABLED  CAPABILITIES
+admin     true     login
+reviewer  true     login
+```
+
+```text
+$ argocd context
+CURRENT  NAME            SERVER
+*        localhost:8080  localhost:8080
+```
+
+
+### Reviewer permissions before the logs rule (steps 2 and 3)
+
+I set the reviewer password with `argocd account update-password --account reviewer` and signed in with `argocd login localhost:8080 --username reviewer --insecure --name reviewer`, both typed by me in my own terminal, so the passwords are not recorded here.
+
+```text
+$ argocd context
+CURRENT  NAME            SERVER
+         localhost:8080  localhost:8080
+*        reviewer        localhost:8080
+```
+
+```text
+$ argocd --argocd-context reviewer account get-user-info
+Logged In: true
+Username: reviewer
+Issuer: argocd
+Groups: 
+```
+
+```text
+$ argocd --argocd-context reviewer app list
+NAME                        CLUSTER                         NAMESPACE       PROJECT  STATUS  HEALTH   SYNCPOLICY  CONDITIONS  REPO                                                  PATH                TARGET
+argocd/tasktracker-dev      https://kubernetes.default.svc  dso202-dev      dso202   Synced  Healthy  Auto-Prune  <none>      https://github.com/TandinZangmo456/dso202-gitops.git  charts/tasktracker  main
+argocd/tasktracker-staging  https://kubernetes.default.svc  dso202-staging  dso202   Synced  Healthy  Manual      <none>      https://github.com/TandinZangmo456/dso202-gitops.git  charts/tasktracker  v1.0.0
+```
+
+```text
+$ argocd --argocd-context reviewer account can-i get applications 'dso202/tasktracker-dev'
+yes
+```
+
+```text
+$ argocd --argocd-context reviewer account can-i sync applications 'dso202/tasktracker-dev'
+no
+```
+
+```text
+$ argocd --argocd-context reviewer account can-i get logs 'dso202/tasktracker-dev'
+no
+```
+
+```text
+$ argocd --argocd-context reviewer proj get platform
+{"level":"fatal","msg":"rpc error: code = PermissionDenied desc = permission denied: projects, get, platform, sub: reviewer, iat: 2026-11-04T19:50:11Z","time":"2026-11-05T01:50:51+06:00"}
+```
+
+```text
+$ argocd --argocd-context reviewer app sync tasktracker-dev
+{"level":"fatal","msg":"rpc error: code = PermissionDenied desc = permission denied: applications, sync, dso202/tasktracker-dev, sub: reviewer, iat: 2026-11-04T19:50:11Z","time":"2026-11-05T01:50:51+06:00"}
+```
+
+
+### Mistake in the UI test: the private window was signed in as admin
+
+When I first tested the UI, the private window was by mistake signed in as `admin`, not `reviewer`. I clicked Sync and then Synchronize on `tasktracker-dev`, and the sync was accepted. It re-synced dev to the commit it was already on (bd9f029), so only the smoke-test hook ran again. The server log and the operation state show it was `admin`:
+
+```text
+$ kubectl logs deploy/argocd-server -n argocd --since=15m | grep -E 'Login successful|initiated sync' | grep -v GetApplication
+{"application":"tasktracker-staging","dest-namespace":"dso202-staging","dest-server":"https://kubernetes.default.svc","level":"info","msg":"admin initiated sync to v1.0.0 (63d4c4fc60e88718839cd052a8878b9edb4eaf9c)","reason":"OperationStarted","time":"2026-11-04T19:43:15Z","type":"Normal","user":"admin"}
+{"level":"info","login.type":"local","msg":"Login successful","time":"2026-11-04T19:50:11Z","username":"reviewer"}
+{"level":"info","login.type":"local","msg":"Login successful","time":"2026-11-04T19:51:29Z","username":"admin"}
+{"application":"tasktracker-dev","dest-namespace":"dso202-dev","dest-server":"https://kubernetes.default.svc","level":"info","msg":"admin initiated sync to main (bd9f029d9238040bf5c3ace40d37d362a24c1a3e)","reason":"OperationStarted","time":"2026-11-04T19:51:59Z","type":"Normal","user":"admin"}
+```
+
+```text
+$ kubectl get application tasktracker-dev -n argocd -o jsonpath='{.status.operationState.operation.initiatedBy}{"\n"}{.status.operationState.phase} {.status.operationState.message}{"\n"}'
+{"username":"admin"}
+Succeeded successfully synced (no more tasks)
+```
+
+I signed the private window out and signed in again as `reviewer` for the real UI test below.
+
+### Reviewer in the UI (step 3)
+
+Signed in again in the private window, this time as `reviewer` (server log line and User Info page):
+
+```text
+$ kubectl logs deploy/argocd-server -n argocd --since=20m | grep 'Login successful'
+{"level":"info","login.type":"local","msg":"Login successful","time":"2026-11-04T19:50:11Z","username":"reviewer"}
+{"level":"info","login.type":"local","msg":"Login successful","time":"2026-11-04T19:51:29Z","username":"admin"}
+{"level":"info","login.type":"local","msg":"Login successful","time":"2026-11-04T19:57:03Z","username":"reviewer"}
+```
+
+
+What I saw in the private window as `reviewer`:
+
+- The Applications page lists only `tasktracker-dev` and `tasktracker-staging` (screenshot `task6-reviewer-app-list.png`).
+- Sync, then Synchronize on `tasktracker-dev` shows the error "Unable to sync: permission denied: applications, sync, dso202/tasktracker-dev, sub: reviewer" (screenshot `task6-reviewer-sync-denied.png`).
+- The panel of the `tasktracker-backend` Deployment has only the Summary and Events tabs. There is no Logs tab (screenshot `task6-reviewer-logs-hidden.png`).
