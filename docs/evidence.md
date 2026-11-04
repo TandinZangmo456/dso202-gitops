@@ -1333,3 +1333,283 @@ What I saw in the private window as `reviewer`:
 - The Applications page lists only `tasktracker-dev` and `tasktracker-staging` (screenshot `task6-reviewer-app-list.png`).
 - Sync, then Synchronize on `tasktracker-dev` shows the error "Unable to sync: permission denied: applications, sync, dso202/tasktracker-dev, sub: reviewer" (screenshot `task6-reviewer-sync-denied.png`).
 - The panel of the `tasktracker-backend` Deployment has only the Summary and Events tabs. There is no Logs tab (screenshot `task6-reviewer-logs-hidden.png`).
+
+### Logs rule added (step 4)
+
+I removed the leading `#` from the logs line in `bootstrap/argocd/argocd-rbac-cm-patch.yaml`, committed and pushed it, and then applied the bootstrap layer again by hand.
+
+```text
+$ git show --stat --format='%h %s' HEAD
+e989442 Grant reviewer read access to Pod logs in dso202 (Task 6, step 4)
+
+ bootstrap/argocd/argocd-rbac-cm-patch.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+```
+
+```text
+$ git show HEAD -- bootstrap/argocd/argocd-rbac-cm-patch.yaml | grep -E '^[-+] '
+-    # p, reviewer, logs, get, dso202/*, allow
++    p, reviewer, logs, get, dso202/*, allow
+```
+
+```text
+$ kubectl apply -k bootstrap/argocd --server-side --force-conflicts 2>&1 | grep -v unchanged
+namespace/argocd serverside-applied
+customresourcedefinition.apiextensions.k8s.io/applications.argoproj.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/applicationsets.argoproj.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/appprojects.argoproj.io serverside-applied
+serviceaccount/argocd-application-controller serverside-applied
+serviceaccount/argocd-applicationset-controller serverside-applied
+serviceaccount/argocd-dex-server serverside-applied
+serviceaccount/argocd-notifications-controller serverside-applied
+serviceaccount/argocd-redis serverside-applied
+serviceaccount/argocd-repo-server serverside-applied
+serviceaccount/argocd-server serverside-applied
+role.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-dex-server serverside-applied
+role.rbac.authorization.k8s.io/argocd-notifications-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-redis serverside-applied
+role.rbac.authorization.k8s.io/argocd-server serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-server serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-dex-server serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-notifications-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-redis serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-server serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-server serverside-applied
+configmap/argocd-cm serverside-applied
+configmap/argocd-cmd-params-cm serverside-applied
+configmap/argocd-gpg-keys-cm serverside-applied
+configmap/argocd-notifications-cm serverside-applied
+configmap/argocd-rbac-cm serverside-applied
+configmap/argocd-ssh-known-hosts-cm serverside-applied
+configmap/argocd-tls-certs-cm serverside-applied
+secret/argocd-notifications-secret serverside-applied
+secret/argocd-secret serverside-applied
+service/argocd-applicationset-controller serverside-applied
+service/argocd-dex-server serverside-applied
+service/argocd-metrics serverside-applied
+service/argocd-notifications-controller-metrics serverside-applied
+service/argocd-redis serverside-applied
+service/argocd-repo-server serverside-applied
+service/argocd-server serverside-applied
+service/argocd-server-metrics serverside-applied
+deployment.apps/argocd-applicationset-controller serverside-applied
+deployment.apps/argocd-dex-server serverside-applied
+deployment.apps/argocd-notifications-controller serverside-applied
+deployment.apps/argocd-redis serverside-applied
+deployment.apps/argocd-repo-server serverside-applied
+deployment.apps/argocd-server serverside-applied
+statefulset.apps/argocd-application-controller serverside-applied
+networkpolicy.networking.k8s.io/argocd-application-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-applicationset-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-dex-server-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-notifications-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-redis-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-repo-server-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-server-network-policy serverside-applied
+```
+
+```text
+$ kubectl get configmap argocd-rbac-cm -n argocd -o jsonpath='{.data.policy\.csv}' | grep '^p,'
+p, reviewer, applications, get, dso202/*, allow
+p, reviewer, projects, get, dso202, allow
+p, reviewer, logs, get, dso202/*, allow
+```
+
+```text
+$ argocd --argocd-context reviewer account can-i get logs 'dso202/tasktracker-dev'
+yes
+```
+
+
+After the rule, the CLI answers `yes`, but the reviewer UI still showed no Logs tab after a reload. I looked into why:
+
+```text
+$ argocd app get tasktracker-dev --output tree | sed -n '/^KIND/,$p'
+KIND/NAME                                  STATUS     HEALTH   MESSAGE
+Deployment/tasktracker-backend             Synced     Healthy  deployment.apps/tasktracker-backend unchanged
+Deployment/tasktracker-frontend            Synced     Healthy  deployment.apps/tasktracker-frontend unchanged
+ConfigMap/tasktracker-config               Synced              configmap/tasktracker-config unchanged
+Service/tasktracker-db                     Synced     Healthy  service/tasktracker-db unchanged
+Deployment/tasktracker-db                  Synced     Healthy  deployment.apps/tasktracker-db unchanged
+Job/tasktracker-smoke-test                 Succeeded  Synced   Reached expected number of succeeded pods
+PersistentVolumeClaim/tasktracker-db-data  Synced     Healthy  persistentvolumeclaim/tasktracker-db-data unchanged
+Service/tasktracker-backend                Synced     Healthy  service/tasktracker-backend unchanged
+Service/tasktracker-frontend               Synced     Healthy  service/tasktracker-frontend unchanged
+```
+
+```text
+$ kubectl get replicasets,pods -n dso202-dev
+NAME                                              DESIRED   CURRENT   READY   AGE
+replicaset.apps/tasktracker-backend-55bf5d6bd6    1         1         1       44m
+replicaset.apps/tasktracker-db-9bf76c557          1         1         1       46m
+replicaset.apps/tasktracker-frontend-686db4c7cd   1         1         1       43m
+
+NAME                                        READY   STATUS      RESTARTS   AGE
+pod/tasktracker-backend-55bf5d6bd6-c8rng    1/1     Running     0          44m
+pod/tasktracker-db-9bf76c557-xdtlr          1/1     Running     0          46m
+pod/tasktracker-frontend-686db4c7cd-j4mt6   1/1     Running     0          43m
+pod/tasktracker-smoke-test-92j6t            0/1     Completed   0          7m27s
+```
+
+```text
+$ argocd --argocd-context reviewer app logs tasktracker-dev --kind Deployment --name tasktracker-backend --tail 3; echo "exit=$?"
+exit=0
+```
+
+```text
+$ argocd --argocd-context localhost:8080 app logs tasktracker-dev --kind Deployment --name tasktracker-backend --tail 3; echo "exit=$?"
+exit=0
+```
+
+```text
+$ kubectl get appproject dso202 -n argocd -o jsonpath='{range .spec.namespaceResourceWhitelist[*]}{.group}/{.kind}{"\n"}{end}'
+apps/Deployment
+/Service
+/ConfigMap
+/PersistentVolumeClaim
+batch/Job
+```
+
+
+The ReplicaSets and Pods exist in `dso202-dev`, but they are missing from the Argo CD tree, and `argocd app logs` prints nothing for `reviewer` and for `admin` alike. So the logs rule is working; the UI simply has no Pod to open logs from. The Argo CD projects documentation (https://argo-cd.readthedocs.io/en/stable/user-guide/projects/) says: "Any child resource whose GroupKind is not permitted by the project is omitted from the tree". My `dso202` whitelist lists only the five kinds the chart renders, so the `ReplicaSet` and `Pod` children of each Deployment are hidden. The documented fix is to add `apps/ReplicaSet` and `Pod` to the whitelist.
+
+### Whitelist widened for visibility
+
+I added `apps/ReplicaSet` and `Pod` to `argocd/projects/dso202.yaml` in its own commit, with a comment, and pushed it. The root delivers the project, so no command against the cluster was needed.
+
+```text
+$ git show --format='%h %s' HEAD -- argocd/projects/dso202.yaml | grep -E '^[0-9a-f]{7} |^\+ '
+2b4fe60 Permit ReplicaSet and Pod in dso202 so the tree shows them (Task 6)
++    # Added in Task 6: Argo CD omits from the resource tree any child whose kind
++    # the project does not permit, so without these two lines the ReplicaSets
++    # and Pods of each Deployment are hidden and no Pod logs can be opened in
++    # the UI, even with the logs RBAC rule. The chart renders neither kind, so
++    # they are only needed for visibility. The cost is that a commit could now
++    # also create a bare Pod or ReplicaSet in the two app namespaces.
++    - group: apps
++      kind: ReplicaSet
++    - group: ""
++      kind: Pod
+```
+
+```text
+$ kubectl get appproject dso202 -n argocd -o jsonpath='{range .spec.namespaceResourceWhitelist[*]}{.group}/{.kind}{"\n"}{end}'
+apps/Deployment
+/Service
+/ConfigMap
+/PersistentVolumeClaim
+batch/Job
+```
+
+```text
+$ argocd app get tasktracker-dev --output tree | sed -n '/^KIND/,$p'
+KIND/NAME                                  STATUS     HEALTH   MESSAGE
+Deployment/tasktracker-db                  Synced     Healthy  deployment.apps/tasktracker-db unchanged
+Deployment/tasktracker-frontend            Synced     Healthy  deployment.apps/tasktracker-frontend unchanged
+Job/tasktracker-smoke-test                 Succeeded  Synced   Reached expected number of succeeded pods
+PersistentVolumeClaim/tasktracker-db-data  Synced     Healthy  persistentvolumeclaim/tasktracker-db-data unchanged
+Service/tasktracker-backend                Synced     Healthy  service/tasktracker-backend unchanged
+ConfigMap/tasktracker-config               Synced              configmap/tasktracker-config unchanged
+Service/tasktracker-db                     Synced     Healthy  service/tasktracker-db unchanged
+Service/tasktracker-frontend               Synced     Healthy  service/tasktracker-frontend unchanged
+Deployment/tasktracker-backend             Synced     Healthy  deployment.apps/tasktracker-backend unchanged
+```
+
+```text
+$ argocd --argocd-context reviewer app logs tasktracker-dev --kind Deployment --name tasktracker-backend --tail 3
+
+```
+
+```text
+$ kubectl get appproject dso202 -n argocd -o jsonpath='{range .spec.namespaceResourceWhitelist[*]}{.group}/{.kind}{"\n"}{end}'
+apps/Deployment
+/Service
+/ConfigMap
+/PersistentVolumeClaim
+batch/Job
+apps/ReplicaSet
+/Pod
+```
+
+
+The first check above still showed five kinds because the root had not polled Git yet. Also, my refresh of the root failed with "permission denied": the reviewer login in step 3 had made `reviewer` the current CLI context. I switched back with `argocd context localhost:8080` (the admin session from Task 2), refreshed the root, and checked again:
+
+```text
+$ argocd context
+CURRENT  NAME            SERVER
+*        localhost:8080  localhost:8080
+         reviewer        localhost:8080
+```
+
+```text
+$ argocd app get tasktracker-dev --output tree | sed -n '/^KIND/,$p'
+KIND/NAME                                      STATUS     HEALTH   MESSAGE
+Service/tasktracker-backend                    Synced     Healthy  service/tasktracker-backend unchanged
+Service/tasktracker-db                         Synced     Healthy  service/tasktracker-db unchanged
+Service/tasktracker-frontend                   Synced     Healthy  service/tasktracker-frontend unchanged
+Deployment/tasktracker-backend                 Synced     Healthy  deployment.apps/tasktracker-backend unchanged
+└─ReplicaSet/tasktracker-backend-55bf5d6bd6               Healthy  
+  └─Pod/tasktracker-backend-55bf5d6bd6-c8rng              Healthy  
+Deployment/tasktracker-db                      Synced     Healthy  deployment.apps/tasktracker-db unchanged
+└─ReplicaSet/tasktracker-db-9bf76c557                     Healthy  
+  └─Pod/tasktracker-db-9bf76c557-xdtlr                    Healthy  
+Job/tasktracker-smoke-test                     Succeeded  Synced   Reached expected number of succeeded pods
+└─Pod/tasktracker-smoke-test-92j6t                        Healthy  
+Deployment/tasktracker-frontend                Synced     Healthy  deployment.apps/tasktracker-frontend unchanged
+└─ReplicaSet/tasktracker-frontend-686db4c7cd              Healthy  
+  └─Pod/tasktracker-frontend-686db4c7cd-j4mt6             Healthy  
+ConfigMap/tasktracker-config                   Synced              configmap/tasktracker-config unchanged
+PersistentVolumeClaim/tasktracker-db-data      Synced     Healthy  persistentvolumeclaim/tasktracker-db-data unchanged
+```
+
+```text
+$ argocd --argocd-context reviewer app logs tasktracker-dev --kind Deployment --name tasktracker-backend --tail 3
+[db] connected
+[server] listening on :8080
+```
+
+
+### Reviewer sees Pod logs in the UI (step 4)
+
+In the private window as `reviewer`, the `tasktracker-backend` Deployment panel now has a Logs tab. It first stayed blank. The argocd-server log showed the PodLogs call failing with `parsing time "failed"`, because following a log in my kind cluster fails:
+
+```text
+$ timeout 5 kubectl logs -f --timestamps deploy/tasktracker-backend -n dso202-dev --tail 2
+2026-11-04T19:16:28.996691837Z [db] connected
+2026-11-04T19:16:29.000779028Z [server] listening on :8080
+failed to create fsnotify watcher: too many open files
+```
+
+```text
+$ cat /proc/sys/fs/inotify/max_user_instances
+128
+```
+
+
+The kubelet cannot open another file watcher, because my laptop allows only 128 inotify instances per user. I did not change this kernel setting. I switched off the Follow button in the log viewer instead, and the logs appeared (screenshot `task6-reviewer-pod-logs.png`).
+
+### Back to the admin session (step 5)
+
+The `reviewer` login had become the current CLI context. Instead of typing the admin password again, I switched back to the admin context saved in Task 2 (`argocd context localhost:8080`, recorded above):
+
+```text
+$ argocd account get-user-info
+Logged In: true
+Username: admin
+Issuer: argocd
+Groups: 
+```
+
+```text
+$ argocd account can-i sync applications 'dso202/tasktracker-dev'
+yes
+```
+
