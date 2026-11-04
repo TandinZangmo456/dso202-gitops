@@ -63,3 +63,24 @@ kind and every namespace), or could edit an AppProject or `argocd-rbac-cm`.
 The workload project would then be able to give itself administrator rights,
 and the whole least-privilege split between `platform` and `dso202` would mean
 nothing. That is why only `platform` may target `argocd`.
+
+### Q2. What does strict scope prevent, and what is lost and what must be done if the sealing key is lost?
+
+With the default strict scope, the name and the namespace of the Secret are
+part of what is encrypted. My dev file can only become a Secret called
+`tasktracker-credentials` in `dso202-dev`. If someone copies that file into
+`dso202-staging`, or renames it, the controller refuses to decrypt it. This
+stops a person who can only write to one namespace from taking a sealed file
+from another namespace and reading its values there. It is also why I had to
+seal dev and staging separately.
+
+If the sealing key is lost, for example because the cluster is deleted
+without a backup, every SealedSecret in Git becomes useless. The ciphertext is
+still there, but no controller can decrypt it, because a new controller makes
+a new key pair. The running Secrets survive only as long as the old cluster
+does. To recover, someone has to get the plaintext values again (from the
+password manager, or by setting new passwords in the database), seal both
+environments again against the new controller, and commit the new files.
+That is why I back up the key to `../dso202-keys/` outside the repository
+before sealing anything, and again after the rebuild in Task 9, since the
+controller also makes a new key every 30 days.

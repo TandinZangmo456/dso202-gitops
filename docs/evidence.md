@@ -791,3 +791,35 @@ $ kubectl get secret tasktracker-credentials -n dso202-dev -o jsonpath='{.metada
 SealedSecret/tasktracker-credentials
 ```
 
+### History search for plaintext (step 7)
+
+I ran this myself, because it uses the credential values. The script
+(`../history-search.sh`, outside the repository) reads each value from
+`secrets-plain/<env>.env` and runs `git log -p --all -S'<value>' | head` for it,
+printing only the key name and how many lines came back. Keys tested: DB_USER,
+DB_PASSWORD, POSTGRES_USER and POSTGRES_PASSWORD, for dev and for staging
+(8 searches). Output as printed:
+
+```text
+$ bash ~/Desktop/SEM7/DSO202/assignments/assignment4/history-search.sh
+dev DB_USER: git log -p --all -S'<value>' | head printed 0 lines
+dev DB_PASSWORD: git log -p --all -S'<value>' | head printed 0 lines
+dev POSTGRES_USER: git log -p --all -S'<value>' | head printed 0 lines
+dev POSTGRES_PASSWORD: git log -p --all -S'<value>' | head printed 0 lines
+staging DB_USER: git log -p --all -S'<value>' | head printed 0 lines
+staging DB_PASSWORD: git log -p --all -S'<value>' | head printed 0 lines
+staging POSTGRES_USER: git log -p --all -S'<value>' | head printed 0 lines
+staging POSTGRES_PASSWORD: git log -p --all -S'<value>' | head printed 0 lines
+
+$ git status --short --ignored
+!! secrets-plain/
+```
+
+Every search printed nothing, and `secrets-plain/` is listed only as ignored.
+
+### Screenshot
+
+`docs/screenshots/task4-platform-apps.png`: the four Applications (root, sealed-secrets at chart 2.20.0, platform-dev, platform-staging), all Synced and Healthy.
+
+Answer Q2: see README.md.
+

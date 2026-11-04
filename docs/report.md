@@ -64,3 +64,17 @@ After `kubectl apply -f bootstrap/root`, the root became `Synced` and `Healthy` 
 ![Figure 3: root Application resource tree](screenshots/task3-root-app-tree.png)
 
 *Figure 3: root Application resource tree*
+
+### Task 4: Platform layer and Sealed Secrets
+
+I added the Sealed Secrets Application (Listing 9) and pushed it. The root picked it up and installed chart 2.20.0, which runs the controller image 0.40.0. The `SealedSecret` CRD appeared a few seconds later. Before sealing anything, I backed up the controller's key to `../dso202-keys/sealing-key.backup.yaml` with mode 600. The file is outside the repository and I never opened it. The evidence only shows `ls -l`.
+
+The plaintext input files gave me more trouble than I expected. I opened them in a text editor, but nothing was saved, so my first check found no files at all. I kept that failed check in the evidence. In the end the two files were made by a script that writes a random password into each file and never prints it. Dev and staging got different passwords, and the DB_* and POSTGRES_* values match inside each file.
+
+I sealed each file for its own namespace with the pipeline from the brief, so the plaintext Secret only ever existed inside the pipe. Then I added the namespaces (Listing 11 and a staging copy) and the two platform Applications. I wrote `platform-staging.yaml` by copying `platform-dev.yaml` and changing only the name, path and namespace. After the push, both platform Applications became `Synced` and `Healthy`. The controller created a `tasktracker-credentials` Secret with the four keys in each namespace, and the quota, LimitRange, Role and RoleBinding from Assignment 2 were all delivered from Git.
+
+I also made a mistake that I caught in time. I wrote the database user names into the evidence text, but a user name is also a credential value. I removed it before committing, and a search of every file and every commit found no trace of it. Finally I searched the whole history for every credential value: four keys in each of the two environments, eight searches in total. Every search came back empty.
+
+![Figure 4: platform and sealed-secrets Applications, all Synced and Healthy](screenshots/task4-platform-apps.png)
+
+*Figure 4: platform and sealed-secrets Applications, all Synced and Healthy*
