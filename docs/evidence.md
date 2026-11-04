@@ -573,3 +573,221 @@ platform   <none>
 
 Answer Q1: see README.md.
 
+## Task 4
+
+### Controller installed through Git (step 1)
+
+```text
+$ kubectl get applications -n argocd
+NAME             SYNC STATUS   HEALTH STATUS
+root             Synced        Healthy
+sealed-secrets   Synced        Healthy
+```
+
+```text
+$ kubectl get pods -n sealed-secrets -o wide
+NAME                                        READY   STATUS    RESTARTS   AGE   IP           NODE            NOMINATED NODE   READINESS GATES
+sealed-secrets-controller-8b5ffdf69-f9nlq   1/1     Running   0          50s   10.244.1.5   worker-node-2   <none>           <none>
+```
+
+```text
+$ kubectl get crd sealedsecrets.bitnami.com
+NAME                        CREATED AT
+sealedsecrets.bitnami.com   2026-11-04T18:49:20Z
+```
+
+```text
+$ kubectl get deploy -n sealed-secrets -o jsonpath='{.items[0].spec.template.spec.containers[0].image}{"\n"}'
+docker.io/bitnami/sealed-secrets-controller:0.40.0
+```
+
+### Sealing key backup (step 2)
+
+Commands run (their output went only into the backup file, which is outside the repository and is never shown):
+
+```text
+$ mkdir -p ../dso202-keys
+$ kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > ../dso202-keys/sealing-key.backup.yaml
+$ chmod 600 ../dso202-keys/sealing-key.backup.yaml
+```
+
+```text
+$ ls -l ../dso202-keys/
+total 8
+-rw------- 1 tandinzangmo tandinzangmo 7087 Nov  5 00:50 sealing-key.backup.yaml
+```
+
+```text
+$ kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key
+NAME                      TYPE                DATA   AGE
+sealed-secrets-keyqtzg5   kubernetes.io/tls   2      22s
+```
+
+```text
+$ git check-ignore -v ../dso202-keys/sealing-key.backup.yaml secrets-plain/dev.env
+fatal: ../dso202-keys/sealing-key.backup.yaml: '../dso202-keys/sealing-key.backup.yaml' is outside repository at '/home/tandinzangmo/Desktop/SEM7/DSO202/assignments/assignment4/dso202-gitops'
+```
+
+### Plaintext input (step 3)
+
+The plan was to type both files in a text editor. Only their existence and permissions are recorded, never their contents:
+
+```text
+$ ls -l secrets-plain/
+ls: cannot access 'secrets-plain/': No such file or directory
+```
+
+```text
+$ git check-ignore -v secrets-plain/dev.env secrets-plain/staging.env
+.gitignore:14:secrets-plain/	secrets-plain/dev.env
+.gitignore:14:secrets-plain/	secrets-plain/staging.env
+```
+
+The first check found no `secrets-plain/` directory: the files had not been saved yet (a search of the whole disk found no `dev.env` or `staging.env`). The `git check-ignore` lines above only show that the paths would be ignored. The check is repeated below after the files were saved.
+
+Saving the files from the editor did not work for me, so the files were generated with a script instead, at my request. The user name and the password (32 random hex characters from `openssl rand -hex 16`) of each environment were chosen by the script. Each value was written straight into the file under `umask 077` and never printed. The DB_* and POSTGRES_* values match inside each file, and dev and staging have different passwords. I read the files myself afterwards to store the values in my password manager.
+
+```text
+$ ls -l secrets-plain/
+total 8
+-rw------- 1 tandinzangmo tandinzangmo 150 Nov  5 00:59 dev.env
+-rw------- 1 tandinzangmo tandinzangmo 158 Nov  5 00:59 staging.env
+```
+
+```text
+$ git check-ignore -v secrets-plain/dev.env secrets-plain/staging.env
+.gitignore:14:secrets-plain/	secrets-plain/dev.env
+.gitignore:14:secrets-plain/	secrets-plain/staging.env
+```
+
+```text
+$ cmp -s secrets-plain/dev.env secrets-plain/staging.env && echo same || echo 'dev.env and staging.env differ'
+dev.env and staging.env differ
+```
+
+```text
+$ git status --short --ignored
+ M docs/evidence.md
+!! secrets-plain/
+```
+
+### Sealing (step 4)
+
+Commands run (the plaintext Secret only exists inside the pipe; the ciphertext files are in the repository and are not copied here):
+
+```text
+$ export SEALED_SECRETS_CONTROLLER_NAMESPACE=sealed-secrets
+$ kubectl create secret generic tasktracker-credentials --namespace dso202-dev --from-env-file=secrets-plain/dev.env --dry-run=client -o yaml | kubeseal --format yaml > platform/dev/tasktracker-credentials.sealed.yaml
+$ kubectl create secret generic tasktracker-credentials --namespace dso202-staging --from-env-file=secrets-plain/staging.env --dry-run=client -o yaml | kubeseal --format yaml > platform/staging/tasktracker-credentials.sealed.yaml
+```
+
+Key names only (values replaced by `<ciphertext>` in the display):
+
+```text
+$ grep -hE '^  (name|namespace):|^    [A-Z_]+:' platform/*/tasktracker-credentials.sealed.yaml | sed -E 's/^(    [A-Z_]+): .*/\1: <ciphertext>/'
+  name: tasktracker-credentials
+  namespace: dso202-dev
+    DB_PASSWORD: <ciphertext>
+    DB_USER: <ciphertext>
+    POSTGRES_PASSWORD: <ciphertext>
+    POSTGRES_USER: <ciphertext>
+  name: tasktracker-credentials
+  namespace: dso202-staging
+    DB_PASSWORD: <ciphertext>
+    DB_USER: <ciphertext>
+    POSTGRES_PASSWORD: <ciphertext>
+    POSTGRES_USER: <ciphertext>
+```
+
+### Platform layer delivered (step 6)
+
+```text
+$ kubectl get applications -n argocd
+NAME               SYNC STATUS   HEALTH STATUS
+platform-dev       Synced        Healthy
+platform-staging   Synced        Healthy
+root               Synced        Healthy
+sealed-secrets     Synced        Healthy
+```
+
+```text
+$ kubectl get namespaces | grep dso202
+dso202-dev           Active   14s
+dso202-staging       Active   14s
+```
+
+```text
+$ kubectl get sealedsecret -n dso202-dev
+NAME                      STATUS   SYNCED   AGE
+tasktracker-credentials            True     13s
+```
+
+```text
+$ kubectl get sealedsecret -n dso202-staging
+NAME                      STATUS   SYNCED   AGE
+tasktracker-credentials            True     13s
+```
+
+```text
+$ kubectl describe secret tasktracker-credentials -n dso202-dev
+Name:         tasktracker-credentials
+Namespace:    dso202-dev
+Labels:       <none>
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+DB_PASSWORD:        32 bytes
+DB_USER:            15 bytes
+POSTGRES_PASSWORD:  32 bytes
+POSTGRES_USER:      15 bytes
+```
+
+```text
+$ kubectl describe secret tasktracker-credentials -n dso202-staging
+Name:         tasktracker-credentials
+Namespace:    dso202-staging
+Labels:       <none>
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+DB_PASSWORD:        32 bytes
+DB_USER:            19 bytes
+POSTGRES_PASSWORD:  32 bytes
+POSTGRES_USER:      19 bytes
+```
+
+```text
+$ kubectl get resourcequota,limitrange -n dso202-dev
+NAME                             REQUEST                                                                                                                                                                LIMIT                                      AGE
+resourcequota/assignment-quota   persistentvolumeclaims: 0/2, pods: 0/10, requests.cpu: 0/500m, requests.memory: 0/1Gi, requests.storage: 0/2Gi, services.loadbalancers: 0/0, services.nodeports: 0/1   limits.cpu: 0/2, limits.memory: 0/1536Mi   14s
+
+NAME                           CREATED AT
+limitrange/assignment-limits   2026-11-04T19:00:16Z
+```
+
+```text
+$ kubectl get resourcequota,limitrange,role,rolebinding -n dso202-staging
+NAME                             REQUEST                                                                                                                                                                LIMIT                                      AGE
+resourcequota/assignment-quota   persistentvolumeclaims: 0/2, pods: 0/10, requests.cpu: 0/500m, requests.memory: 0/1Gi, requests.storage: 0/2Gi, services.loadbalancers: 0/0, services.nodeports: 0/1   limits.cpu: 0/2, limits.memory: 0/1536Mi   14s
+
+NAME                           CREATED AT
+limitrange/assignment-limits   2026-11-04T19:00:16Z
+
+NAME                                         CREATED AT
+role.rbac.authorization.k8s.io/task-reader   2026-11-04T19:00:16Z
+
+NAME                                                        ROLE               AGE
+rolebinding.rbac.authorization.k8s.io/task-reader-binding   Role/task-reader   14s
+```
+
+```text
+$ kubectl get secret tasktracker-credentials -n dso202-dev -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'
+SealedSecret/tasktracker-credentials
+```
+
