@@ -823,3 +823,405 @@ Every search printed nothing, and `secrets-plain/` is listed only as ignored.
 
 Answer Q2: see README.md.
 
+## Task 5
+
+### Smoke test and baseline tag (steps 1 and 2)
+
+The Service name in Listing 13 was replaced by the name the chart renders (`tasktracker-backend`). Kinds rendered now, matching the dso202 whitelist exactly:
+
+```text
+$ helm template tasktracker charts/tasktracker -f environments/dev/values.yaml | grep '^kind:' | sort | uniq -c
+      1 kind: ConfigMap
+      3 kind: Deployment
+      1 kind: Job
+      1 kind: PersistentVolumeClaim
+      3 kind: Service
+```
+
+```text
+$ git tag -a v1.0.0 -m 'Baseline release: images 1.0'
+
+```
+
+```text
+$ git push origin v1.0.0
+To https://github.com/TandinZangmo456/dso202-gitops.git
+ * [new tag]         v1.0.0 -> v1.0.0
+```
+
+```text
+$ git ls-remote --tags origin
+4b3d93445b552dbee59242cb7ea1d1730f4a67eb	refs/tags/v1.0.0
+63d4c4fc60e88718839cd052a8878b9edb4eaf9c	refs/tags/v1.0.0^{}
+```
+
+```text
+$ git ls-tree -r --name-only v1.0.0 | grep -E 'smoke-test-job|environments/staging/values.yaml'
+charts/tasktracker/templates/smoke-test-job.yaml
+environments/staging/values.yaml
+```
+
+### Applications added (step 3)
+
+The two Application files were committed and pushed at 01:12:37, then `argocd app get root --refresh` was run.
+
+### Watching dev deploy (step 4)
+
+Before the push I started `kubectl get pods -n dso202-dev -w --output-watch-events`, with each line prefixed by the time (`date +%T`), writing to a log file. The log, with only the first line of each Pod state kept (the full log repeats some lines):
+
+```text
+$ awk '!seen[$3" "$4" "$5]++' ../watch-logs/dev-pods-watch.log | awk '{print $1, $2, $3, $4, $5}'
+01:13:02 EVENT NAME READY STATUS
+01:13:02 ADDED tasktracker-db-9bf76c557-xdtlr 0/1 Pending
+01:13:07 MODIFIED tasktracker-db-9bf76c557-xdtlr 0/1 ContainerCreating
+01:15:17 MODIFIED tasktracker-db-9bf76c557-xdtlr 0/1 Running
+01:15:23 MODIFIED tasktracker-db-9bf76c557-xdtlr 1/1 Running
+01:15:24 ADDED tasktracker-backend-55bf5d6bd6-c8rng 0/1 Pending
+01:15:24 MODIFIED tasktracker-backend-55bf5d6bd6-c8rng 0/1 ContainerCreating
+01:16:27 MODIFIED tasktracker-backend-55bf5d6bd6-c8rng 0/1 Running
+01:16:32 MODIFIED tasktracker-backend-55bf5d6bd6-c8rng 1/1 Running
+01:16:33 ADDED tasktracker-frontend-686db4c7cd-j4mt6 0/1 Pending
+01:16:33 MODIFIED tasktracker-frontend-686db4c7cd-j4mt6 0/1 ContainerCreating
+01:17:18 MODIFIED tasktracker-frontend-686db4c7cd-j4mt6 0/1 Running
+01:17:19 MODIFIED tasktracker-frontend-686db4c7cd-j4mt6 1/1 Running
+01:17:19 ADDED tasktracker-smoke-test-rdhzj 0/1 Pending
+01:17:20 MODIFIED tasktracker-smoke-test-rdhzj 0/1 ContainerCreating
+01:17:32 MODIFIED tasktracker-smoke-test-rdhzj 1/1 Running
+01:17:33 MODIFIED tasktracker-smoke-test-rdhzj 0/1 Completed
+```
+
+Order: the database Pod became ready (01:15:23) before the backend Pod was created (01:15:24); the backend became ready (01:16:32) before the frontend Pod was created (01:16:33); the smoke-test Pod was created only after the frontend was ready (01:17:19) and completed at 01:17:33. That is waves 0, 1, 2 and then the PostSync hook. The first two minutes of the database were spent pulling images onto the new node.
+
+```text
+$ kubectl get job -n dso202-dev
+NAME                     STATUS     COMPLETIONS   DURATION   AGE
+tasktracker-smoke-test   Complete   1/1           16s        59s
+```
+
+```text
+$ kubectl logs job/tasktracker-smoke-test -n dso202-dev
+[{"id":1,"title":"Set up kind cluster","description":"Bring up the local cluster from Practical 1","status":"done","created_at":"2026-11-04T19:15:20.712Z"},{"id":2,"title":"Write namespace manifest","description":"One namespace for all assignment resources","status":"in_progress","created_at":"2026-11-04T19:15:20.712Z"},{"id":3,"title":"Wire ConfigMap and Secret","description":"DB_* and POSTGRES_* must carry matching values","status":"pending","created_at":"2026-11-04T19:15:20.712Z"}]
+```
+
+```text
+$ argocd app get tasktracker-dev
+Name:               argocd/tasktracker-dev
+Project:            dso202
+Server:             https://kubernetes.default.svc
+Namespace:          dso202-dev
+URL:                https://localhost:8080/applications/tasktracker-dev
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           main
+  Path:             charts/tasktracker
+  Helm Values:      ../../environments/dev/values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Automated (Prune)
+Sync Status:        Synced to main (d6403df)
+Health Status:      Healthy
+
+GROUP  KIND                   NAMESPACE   NAME                    STATUS     HEALTH   HOOK      MESSAGE
+       ConfigMap              dso202-dev  tasktracker-config      Synced                        configmap/tasktracker-config created
+       PersistentVolumeClaim  dso202-dev  tasktracker-db-data     Synced     Healthy            persistentvolumeclaim/tasktracker-db-data created
+       Service                dso202-dev  tasktracker-db          Synced     Healthy            service/tasktracker-db created
+       Service                dso202-dev  tasktracker-backend     Synced     Healthy            service/tasktracker-backend created
+       Service                dso202-dev  tasktracker-frontend    Synced     Healthy            service/tasktracker-frontend created
+apps   Deployment             dso202-dev  tasktracker-db          Synced     Healthy            deployment.apps/tasktracker-db created
+apps   Deployment             dso202-dev  tasktracker-backend     Synced     Healthy            deployment.apps/tasktracker-backend created
+apps   Deployment             dso202-dev  tasktracker-frontend    Synced     Healthy            deployment.apps/tasktracker-frontend created
+batch  Job                    dso202-dev  tasktracker-smoke-test  Succeeded  Synced   PostSync  Reached expected number of succeeded pods
+```
+
+### Dev frontend and CRUD cycle (step 4)
+
+The frontend page is served on the kind port mapping:
+
+```text
+$ curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:30080/ && curl -s http://localhost:30080/ | grep -i '<title>'
+HTTP 200
+<title>Field Log — Task Tracker</title>
+```
+
+```text
+$ curl -s http://localhost:30080/config.js
+// Rendered at container start by docker-entrypoint.sh via envsubst.
+// Static assets can't read environment variables at request time, so the
+// real value gets baked into config.js once, right before nginx starts.
+window.__CONFIG__ = {
+  BACKEND_URL: "http://tasktracker-backend:8080"
+};
+```
+
+As in Assignment 1, `app.js` calls `BACKEND_URL` from the browser, and `tasktracker-backend` only resolves inside the cluster, so the page alone cannot reach the API. The CRUD cycle was done through a port-forward to the backend Service (`kubectl port-forward -n dso202-dev svc/tasktracker-backend 18080:8080`, running in the background), as in Assignment 1:
+
+```text
+$ curl -s http://localhost:18080/api/status
+{"status":"ok","db":"connected"}
+```
+
+```text
+$ curl -s -X POST http://localhost:18080/api/tasks -H 'Content-Type: application/json' -d '{"title":"A4 GitOps test","description":"created in dso202-dev"}'
+{"id":4,"title":"A4 GitOps test","description":"created in dso202-dev","status":"pending","created_at":"2026-11-04T19:19:10.674Z"}
+```
+
+```text
+$ curl -s http://localhost:18080/api/tasks/4
+{"id":4,"title":"A4 GitOps test","description":"created in dso202-dev","status":"pending","created_at":"2026-11-04T19:19:10.674Z"}
+```
+
+```text
+$ curl -s -X PUT http://localhost:18080/api/tasks/4 -H 'Content-Type: application/json' -d '{"title":"A4 GitOps test","description":"updated in dso202-dev","status":"done"}'
+{"id":4,"title":"A4 GitOps test","description":"updated in dso202-dev","status":"done","created_at":"2026-11-04T19:19:10.674Z"}
+```
+
+```text
+$ curl -s http://localhost:18080/api/tasks/4
+{"id":4,"title":"A4 GitOps test","description":"updated in dso202-dev","status":"done","created_at":"2026-11-04T19:19:10.674Z"}
+```
+
+```text
+$ curl -s -o /dev/null -w 'HTTP %{http_code}\n' -X DELETE http://localhost:18080/api/tasks/4
+HTTP 204
+```
+
+```text
+$ curl -s -w '\nHTTP %{http_code}\n' http://localhost:18080/api/tasks/4
+{"error":"task not found"}
+HTTP 404
+```
+
+```text
+$ curl -s http://localhost:18080/api/tasks
+[{"id":1,"title":"Set up kind cluster","description":"Bring up the local cluster from Practical 1","status":"done","created_at":"2026-11-04T19:15:20.712Z"},{"id":2,"title":"Write namespace manifest","description":"One namespace for all assignment resources","status":"in_progress","created_at":"2026-11-04T19:15:20.712Z"},{"id":3,"title":"Wire ConfigMap and Secret","description":"DB_* and POSTGRES_* must carry matching values","status":"pending","created_at":"2026-11-04T19:15:20.712Z"}]
+```
+
+### Staging before the first sync (step 5)
+
+State of every Application, and of `root`, before staging was synchronised:
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   OutOfSync     Missing
+```
+
+```text
+$ argocd app get tasktracker-staging
+Name:               argocd/tasktracker-staging
+Project:            dso202
+Server:             https://kubernetes.default.svc
+Namespace:          dso202-staging
+URL:                https://localhost:8080/applications/tasktracker-staging
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           v1.0.0
+  Path:             charts/tasktracker
+  Helm Values:      ../../environments/staging/values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Manual
+Sync Status:        OutOfSync from v1.0.0 (63d4c4f)
+Health Status:      Missing
+
+GROUP  KIND                   NAMESPACE       NAME                  STATUS     HEALTH   HOOK  MESSAGE
+       ConfigMap              dso202-staging  tasktracker-config    OutOfSync  Missing        
+       PersistentVolumeClaim  dso202-staging  tasktracker-db-data   OutOfSync  Missing        
+       Service                dso202-staging  tasktracker-backend   OutOfSync  Missing        
+       Service                dso202-staging  tasktracker-db        OutOfSync  Missing        
+       Service                dso202-staging  tasktracker-frontend  OutOfSync  Missing        
+apps   Deployment             dso202-staging  tasktracker-backend   OutOfSync  Missing        
+apps   Deployment             dso202-staging  tasktracker-db        OutOfSync  Missing        
+apps   Deployment             dso202-staging  tasktracker-frontend  OutOfSync  Missing        
+```
+
+```text
+$ argocd app get root | sed -n '1,14p'
+Name:               argocd/root
+Project:            platform
+Server:             https://kubernetes.default.svc
+Namespace:          argocd
+URL:                https://localhost:8080/applications/root
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           main
+  Path:             argocd
+SyncWindow:         Sync Allowed
+Sync Policy:        Automated (Prune)
+Sync Status:        Synced to main (d6403df)
+Health Status:      Healthy
+```
+
+```text
+$ argocd app get root | sed -n '/^GROUP/,$p'
+GROUP        KIND         NAMESPACE  NAME                 STATUS  HEALTH   HOOK  MESSAGE
+argoproj.io  Application  argocd     tasktracker-dev      Synced  Healthy        application.argoproj.io/tasktracker-dev unchanged
+argoproj.io  Application  argocd     tasktracker-staging  Synced  Missing        application.argoproj.io/tasktracker-staging unchanged
+argoproj.io  AppProject   argocd     dso202               Synced                 
+argoproj.io  Application  argocd     platform-dev         Synced  Healthy        
+argoproj.io  Application  argocd     platform-staging     Synced  Healthy        
+argoproj.io  Application  argocd     sealed-secrets       Synced  Healthy        
+```
+
+```text
+$ kubectl get application root -n argocd -o jsonpath='{range .status.resources[*]}{.kind}/{.name}: health={.health.status}{"\n"}{end}'
+AppProject/dso202: health=
+Application/platform-dev: health=
+Application/platform-staging: health=
+Application/sealed-secrets: health=
+Application/tasktracker-dev: health=
+Application/tasktracker-staging: health=
+```
+
+In my cluster `root` was already `Synced` and `Healthy` here, although `tasktracker-staging` was `OutOfSync` and `Missing`. The root does see the child as `Missing` (resource list above), but its own health is not lowered by it. Section 13 of the brief expected `Progressing`; this is what I observed.
+
+### First staging sync (step 5)
+
+```text
+$ argocd app sync tasktracker-staging --timeout 600
+{"level":"fatal","msg":"Failed to establish connection to localhost:8080: error dial proxy: dial tcp [::1]:8080: connect: connection refused","time":"2026-11-05T01:32:48+06:00"}
+```
+
+
+The sync above failed because nothing was listening on `localhost:8080`. My
+laptop ran out of memory: `argocd-server` and `argocd-repo-server` were
+restarted, and the `kubectl port-forward` to Argo CD died with them ("lost
+connection to pod"). I closed Chrome and VS Code to free memory, checked that
+all seven Argo CD Pods were `Running` again, restarted the port-forward and ran
+the same sync again. Nothing in Git or in the cluster was changed in between.
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS    RESTARTS        AGE
+argocd-application-controller-0                     1/1     Running   0               156m
+argocd-applicationset-controller-58bb5c7479-lb67f   1/1     Running   0               156m
+argocd-dex-server-dd6b85d9c-jc4pd                   1/1     Running   6 (150m ago)    156m
+argocd-notifications-controller-6b85c65458-c6v7s    1/1     Running   0               156m
+argocd-redis-869b85489d-2njct                       1/1     Running   0               156m
+argocd-repo-server-5bf66565cd-f74df                 1/1     Running   9 (5m35s ago)   156m
+argocd-server-7474bb8f76-dbbxk                      1/1     Running   3 (5m49s ago)   156m
+```
+
+```text
+$ argocd app sync tasktracker-staging --timeout 600
+TIMESTAMP                  GROUP        KIND              NAMESPACE                      NAME    STATUS    HEALTH        HOOK  MESSAGE
+2026-11-05T01:43:15+06:00   apps  Deployment             dso202-staging   tasktracker-backend  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00   apps  Deployment             dso202-staging        tasktracker-db  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00   apps  Deployment             dso202-staging  tasktracker-frontend  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00          ConfigMap             dso202-staging    tasktracker-config  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00         PersistentVolumeClaim  dso202-staging   tasktracker-db-data  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00            Service             dso202-staging   tasktracker-backend  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00            Service             dso202-staging        tasktracker-db  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00            Service             dso202-staging  tasktracker-frontend  OutOfSync  Missing              
+2026-11-05T01:43:15+06:00          ConfigMap  dso202-staging    tasktracker-config    Synced  Missing              
+2026-11-05T01:43:15+06:00         PersistentVolumeClaim  dso202-staging   tasktracker-db-data    Synced  Progressing              
+2026-11-05T01:43:15+06:00            Service             dso202-staging   tasktracker-backend    Synced  Healthy                  
+2026-11-05T01:43:15+06:00            Service             dso202-staging        tasktracker-db    Synced  Healthy                  
+2026-11-05T01:43:15+06:00            Service             dso202-staging  tasktracker-frontend    Synced  Healthy                  
+2026-11-05T01:43:15+06:00   apps  Deployment  dso202-staging        tasktracker-db    Synced  Progressing              
+2026-11-05T01:43:17+06:00          ConfigMap             dso202-staging    tasktracker-config    Synced  Missing                  configmap/tasktracker-config created
+2026-11-05T01:43:17+06:00         PersistentVolumeClaim  dso202-staging   tasktracker-db-data    Synced  Progressing              persistentvolumeclaim/tasktracker-db-data created
+2026-11-05T01:43:17+06:00            Service             dso202-staging        tasktracker-db    Synced  Healthy                  service/tasktracker-db created
+2026-11-05T01:43:17+06:00            Service             dso202-staging  tasktracker-frontend    Synced  Healthy                  service/tasktracker-frontend created
+2026-11-05T01:43:17+06:00            Service             dso202-staging   tasktracker-backend    Synced  Healthy                  service/tasktracker-backend created
+2026-11-05T01:43:17+06:00   apps  Deployment             dso202-staging        tasktracker-db    Synced  Progressing              deployment.apps/tasktracker-db created
+2026-11-05T01:43:18+06:00         PersistentVolumeClaim  dso202-staging   tasktracker-db-data    Synced  Healthy              persistentvolumeclaim/tasktracker-db-data created
+2026-11-05T01:44:16+06:00   apps  Deployment  dso202-staging        tasktracker-db    Synced  Healthy              deployment.apps/tasktracker-db created
+2026-11-05T01:44:16+06:00   apps  Deployment  dso202-staging   tasktracker-backend    Synced  Progressing              
+2026-11-05T01:44:18+06:00   apps  Deployment  dso202-staging   tasktracker-backend    Synced  Progressing              deployment.apps/tasktracker-backend created
+2026-11-05T01:44:47+06:00   apps  Deployment  dso202-staging   tasktracker-backend    Synced  Healthy              deployment.apps/tasktracker-backend created
+2026-11-05T01:44:47+06:00   apps  Deployment  dso202-staging  tasktracker-frontend    Synced  Progressing              
+2026-11-05T01:44:49+06:00   apps  Deployment  dso202-staging  tasktracker-frontend    Synced  Progressing              deployment.apps/tasktracker-frontend created
+2026-11-05T01:45:14+06:00   apps  Deployment  dso202-staging  tasktracker-frontend    Synced  Healthy              deployment.apps/tasktracker-frontend created
+2026-11-05T01:45:14+06:00  batch         Job  dso202-staging  tasktracker-smoke-test   Running   Synced    PostSync  job.batch/tasktracker-smoke-test created
+2026-11-05T01:45:19+06:00  batch         Job  dso202-staging  tasktracker-smoke-test  Succeeded   Synced    PostSync  Reached expected number of succeeded pods
+
+Name:               argocd/tasktracker-staging
+Project:            dso202
+Server:             https://kubernetes.default.svc
+Namespace:          dso202-staging
+URL:                https://localhost:8080/applications/tasktracker-staging
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           v1.0.0
+  Path:             charts/tasktracker
+  Helm Values:      ../../environments/staging/values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Manual
+Sync Status:        Synced to v1.0.0 (63d4c4f)
+Health Status:      Healthy
+
+Operation:          Sync
+Sync Revision:      63d4c4fc60e88718839cd052a8878b9edb4eaf9c
+Phase:              Succeeded
+Start:              2026-11-05 01:43:15 +0600 +06
+Finished:           2026-11-05 01:45:19 +0600 +06
+Duration:           2m4s
+Message:            successfully synced (no more tasks)
+
+GROUP  KIND                   NAMESPACE       NAME                    STATUS     HEALTH   HOOK      MESSAGE
+       ConfigMap              dso202-staging  tasktracker-config      Synced                        configmap/tasktracker-config created
+       PersistentVolumeClaim  dso202-staging  tasktracker-db-data     Synced     Healthy            persistentvolumeclaim/tasktracker-db-data created
+       Service                dso202-staging  tasktracker-db          Synced     Healthy            service/tasktracker-db created
+       Service                dso202-staging  tasktracker-frontend    Synced     Healthy            service/tasktracker-frontend created
+       Service                dso202-staging  tasktracker-backend     Synced     Healthy            service/tasktracker-backend created
+apps   Deployment             dso202-staging  tasktracker-db          Synced     Healthy            deployment.apps/tasktracker-db created
+apps   Deployment             dso202-staging  tasktracker-backend     Synced     Healthy            deployment.apps/tasktracker-backend created
+apps   Deployment             dso202-staging  tasktracker-frontend    Synced     Healthy            deployment.apps/tasktracker-frontend created
+batch  Job                    dso202-staging  tasktracker-smoke-test  Succeeded  Synced   PostSync  Reached expected number of succeeded pods
+```
+
+
+### Staging after the first sync
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+```text
+$ kubectl get pods,svc -n dso202-staging
+NAME                                        READY   STATUS      RESTARTS   AGE
+pod/tasktracker-backend-54ff767596-2fq9g    1/1     Running     0          73s
+pod/tasktracker-db-7994c9dc8c-5lzg9         1/1     Running     0          2m14s
+pod/tasktracker-frontend-74b976dd8d-cvrnv   1/1     Running     0          42s
+pod/tasktracker-smoke-test-j4jvp            0/1     Completed   0          15s
+
+NAME                           TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+service/tasktracker-backend    ClusterIP   10.96.147.151   <none>        8080/TCP         2m14s
+service/tasktracker-db         ClusterIP   None            <none>        5432/TCP         2m14s
+service/tasktracker-frontend   NodePort    10.96.189.6     <none>        8080:30081/TCP   2m14s
+```
+
+```text
+$ kubectl logs job/tasktracker-smoke-test -n dso202-staging
+[{"id":1,"title":"Set up kind cluster","description":"Bring up the local cluster from Practical 1","status":"done","created_at":"2026-11-04T19:44:12.662Z"},{"id":2,"title":"Write namespace manifest","description":"One namespace for all assignment resources","status":"in_progress","created_at":"2026-11-04T19:44:12.662Z"},{"id":3,"title":"Wire ConfigMap and Secret","description":"DB_* and POSTGRES_* must carry matching values","status":"pending","created_at":"2026-11-04T19:44:12.662Z"}]
+```
+
+
+The staging frontend has no host port mapping, so I reached it with `kubectl port-forward svc/tasktracker-frontend -n dso202-staging 8081:8080` running in the background.
+
+```text
+$ curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8081/
+HTTP 200
+```
+
+```text
+$ curl -s http://localhost:8081/config.js
+// Rendered at container start by docker-entrypoint.sh via envsubst.
+// Static assets can't read environment variables at request time, so the
+// real value gets baked into config.js once, right before nginx starts.
+window.__CONFIG__ = {
+  BACKEND_URL: "http://tasktracker-backend:8080"
+};
+```
+
