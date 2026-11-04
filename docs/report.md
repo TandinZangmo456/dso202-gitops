@@ -14,7 +14,39 @@ All command output is kept in [evidence.md](evidence.md). This report explains w
 
 ## 2. Architecture and the two environments
 
-(Written after Task 5.)
+Everything runs on my laptop in one kind cluster called `dso202-gitops`, with one control-plane node and two workers. It has four namespaces that matter:
+
+| Namespace | What runs there |
+| --- | --- |
+| `argocd` | Argo CD itself, seven Pods, plus every Application and AppProject object |
+| `sealed-secrets` | the Sealed Secrets controller, which holds the sealing key |
+| `dso202-dev` | the Task Tracker for dev |
+| `dso202-staging` | the Task Tracker for staging |
+
+The cluster cannot be reached from GitHub, so Argo CD polls my repository every 60 seconds.
+
+Only two things are applied by hand. `bootstrap/argocd` installs Argo CD from the pinned v3.5.6 manifest, and `bootstrap/root` creates the `platform` project and the `root` Application. The root then reads the `argocd/` folder and creates everything else in sync-wave order:
+
+1. wave -3: the `dso202` project
+2. wave -2: the Sealed Secrets controller
+3. wave -1: `platform-dev` and `platform-staging` (namespace, quota, limits, RBAC, sealed credentials)
+4. wave 0: `tasktracker-dev` and `tasktracker-staging` (the Helm chart)
+
+Inside the chart there are more waves: database 0, backend 1, frontend 2, and then the PostSync smoke-test Job.
+
+There are two projects. `platform` is the administrator project and may deploy any kind into `argocd`, `sealed-secrets` and the two app namespaces. `dso202` is the workload project. It may only deploy into `dso202-dev` and `dso202-staging`, may not create any cluster-scoped kind, and may only create the five kinds my chart renders: Deployment, Service, ConfigMap, PersistentVolumeClaim and Job.
+
+The two environments use the same chart. They differ only in their values file and in the Git revision they follow:
+
+| | dev | staging |
+| --- | --- | --- |
+| Revision | branch `main` | a tag, `v1.0.0` at first |
+| Sync | automated, with prune and self-heal | manual |
+| Values | `environments/dev/values.yaml` | `environments/staging/values.yaml` |
+| Frontend | NodePort 30080, mapped to `localhost:30080` | NodePort 30081, reached with `kubectl port-forward` |
+| Credentials | SealedSecret in `platform/dev/` | separate SealedSecret in `platform/staging/` |
+
+So dev gets every merge within about a minute, while staging only changes when someone moves its tag in Git and then presses sync.
 
 ## 3. Tasks
 
@@ -78,3 +110,19 @@ I also made a mistake that I caught in time. I wrote the database user names int
 ![Figure 4: platform and sealed-secrets Applications, all Synced and Healthy](screenshots/task4-platform-apps.png)
 
 *Figure 4: platform and sealed-secrets Applications, all Synced and Healthy*
+
+### Task 5: Deploy dev and staging
+
+I added the PostSync smoke-test Job to the chart first. The URL in Listing 13 did not match my Service name, so I changed it to `tasktracker-backend:8080` and explained this in the file header. I pushed it and tagged that commit `v1.0.0`, which is the baseline staging is pinned to. Then I added the two Task Tracker Applications. Dev follows `main` and syncs by itself. Staging follows the tag and has no `automated` block.
+
+While dev came up, I kept a timestamped watch on the Pods. The order was exactly the sync waves. The database became ready at 01:15:23 and the backend Pod was only created one second later. The backend became ready at 01:16:32 and the frontend Pod was created at 01:16:33. The smoke-test Pod started only after the frontend was ready and finished at 01:17:33, and its log printed the three seeded tasks. Most of the time was spent pulling images onto the new nodes.
+
+The dev frontend answered on `localhost:30080`. The page itself cannot call the backend from my browser, because `BACKEND_URL` is the in-cluster name `tasktracker-backend`, the same as in Assignment 1. So I tested create, read, update and delete through a port-forward to the backend with `curl`, and all four worked.
+
+Staging stayed `OutOfSync` and `Missing` after the push, because nothing in it syncs by itself. The brief expected the root to be `Progressing` at this point. In my cluster the root stayed `Healthy`, although its resource list showed `tasktracker-staging` as `Missing`. I wrote down what I actually saw.
+
+My first `argocd app sync tasktracker-staging` failed with "connection refused". My laptop had run out of memory, and `argocd-server` and the repo-server were restarted, which also killed my port-forward. I closed Chrome and VS Code, waited for the Argo CD Pods to be ready again, restarted the port-forward and ran the same sync again. This time it finished in about two minutes, with the same wave order as dev, and the smoke test passed. After that all six Applications were `Synced` and `Healthy`. The staging frontend returned HTTP 200 through a port-forward on port 8081, and its NodePort is 30081 as set in the staging values.
+
+![Figure 5: tasktracker-dev resource tree in the Argo CD UI](screenshots/task5-tasktracker-dev-tree.png)
+
+*Figure 5: tasktracker-dev resource tree in the Argo CD UI*

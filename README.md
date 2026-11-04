@@ -84,3 +84,31 @@ environments again against the new controller, and commit the new files.
 That is why I back up the key to `../dso202-keys/` outside the repository
 before sealing anything, and again after the rebuild in Task 9, since the
 controller also makes a new key every 30 days.
+
+### Q3. What is the difference between `Synced` and `Healthy`? Give an example where an Application is `Synced` but not `Healthy`.
+
+`Synced` compares Git with the cluster. It means the objects in the cluster
+match what the chart renders from Git at the target revision. `Healthy` looks
+at whether those objects actually work: a Deployment is only Healthy when its
+Pods are ready, a Job when it has succeeded, and so on. The two are checked
+separately, so an Application can match Git perfectly and still not be working.
+
+I saw this in my own dev deploy. My timestamped watch of
+`kubectl get applications -n argocd -w` (evidence, Task 5) shows:
+
+```text
+01:16:33 tasktracker-dev       Synced        Progressing
+01:16:34 tasktracker-dev       Synced        Progressing
+01:17:19 tasktracker-dev       Synced        Healthy
+```
+
+At 01:16:33 Argo CD had applied the frontend Deployment from Git, so the
+Application was `Synced`, but the frontend Pod was still pulling its image and
+was not ready yet, so the health was `Progressing`. It only became `Healthy` at
+01:17:19, when the readiness probe passed. The same thing can be provoked on
+purpose: a release with an image that crashes at start-up would be `Synced`
+(the Deployment matches Git) but `Degraded` once the 120 second progress
+deadline runs out. Task 7 does exactly that.
+
+The opposite also happens. `tasktracker-staging` was `OutOfSync` and `Missing`
+before its first manual sync: Git describes objects that do not exist yet.
