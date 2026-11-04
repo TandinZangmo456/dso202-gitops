@@ -6,9 +6,9 @@
 # refuses to render until dev or prod is chosen.
 environment: ""
 
-# Shared by all three images. An empty tag means "use .Chart.AppVersion".
+# Shared by all three images. Each tier sets its own repository and tag below
+# (contract C1). IfNotPresent lets images loaded with 'kind load' be used.
 image:
-  tag: ""
   pullPolicy: IfNotPresent
 
 # Non-sensitive settings, rendered into the ConfigMap.
@@ -27,9 +27,16 @@ config:
 credentials:
   existingSecret: tasktracker-credentials
 
+# Per-tier settings. image.tag is the release: the environment values files
+# override it, never a template (contract C1). extraEnv is a list of
+# {name, value} pairs added to the container as they are (contract C2), so a
+# new variable needs a values change only. The images are amd64 rebuilds of
+# the tutor-issued 1.0 images, approved by the tutor for this laptop.
 database:
   image:
-    repository: sarojsanyasi/dso202-db
+    repository: penguintandinzangmo/dso202-db
+    tag: "1.0"
+  extraEnv: []
   resources:
     requests:
       cpu: 100m
@@ -43,7 +50,9 @@ database:
 
 backend:
   image:
-    repository: sarojsanyasi/dso202-backend
+    repository: penguintandinzangmo/dso202-backend
+    tag: "1.0"
+  extraEnv: []
   replicaCount: 1
   resources:
     requests:
@@ -57,7 +66,9 @@ backend:
 
 frontend:
   image:
-    repository: sarojsanyasi/dso202-frontend
+    repository: penguintandinzangmo/dso202-frontend
+    tag: "1.0"
+  extraEnv: []
   replicaCount: 1
   resources:
     requests:

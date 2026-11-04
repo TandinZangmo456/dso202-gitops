@@ -4,7 +4,7 @@ name: tasktracker                 # must match the directory name (charts/tasktr
 description: Three-tier Task Tracker (nginx frontend, REST backend, PostgreSQL) for DSO202
 type: application
 version: 0.2.0                    # version of the CHART; bump on any chart change
-appVersion: "1.0"                 # the issued image tag; quoted so YAML keeps it a string
+appVersion: "1.0"                 # label only; image tags are values (contract C1)
 kubeVersion: ">=1.30.0-0"
 keywords:
   - dso202

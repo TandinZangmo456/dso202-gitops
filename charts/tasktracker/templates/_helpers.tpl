@@ -58,10 +58,11 @@ created by the Sealed Secrets controller from a SealedSecret in platform/<env>/.
 
 {{/*
 tasktracker.image: "<repository>:<tag>". Called with (dict "ctx" $ "image" .Values.<tier>.image).
-Tag order: per-tier tag, then image.tag, then appVersion.
+Contract C1: the tag comes only from <tier>.image.tag. There is no fallback to
+appVersion, so no tag is hidden in the chart and a release is a values change.
 */}}
 {{- define "tasktracker.image" -}}
-{{- $tag := .image.tag | default .ctx.Values.image.tag | default .ctx.Chart.AppVersion }}
+{{- $tag := required "every tier needs image.tag (contract C1)" .image.tag }}
 {{- printf "%s:%s" .image.repository $tag }}
 {{- end }}
 

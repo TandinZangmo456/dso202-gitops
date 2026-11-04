@@ -7,10 +7,10 @@
     "environment": { "enum": ["", "dev", "prod"] },
     "image": {
       "type": "object",
-      "required": ["tag", "pullPolicy"],
+      "required": ["pullPolicy"],
+      "additionalProperties": false,
       "properties": {
-        "tag": { "type": "string", "not": { "const": "latest" } },
-        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+        "pullPolicy": { "enum": ["IfNotPresent", "Never"] }
       }
     },
     "config": {
@@ -36,6 +36,7 @@
       "required": ["image", "resources", "persistence"],
       "properties": {
         "image": { "$ref": "#/$defs/image" },
+        "extraEnv": { "$ref": "#/$defs/extraEnv" },
         "resources": { "$ref": "#/$defs/resources" },
         "persistence": {
           "type": "object",
@@ -52,6 +53,7 @@
       "required": ["image", "replicaCount", "resources", "service"],
       "properties": {
         "image": { "$ref": "#/$defs/image" },
+        "extraEnv": { "$ref": "#/$defs/extraEnv" },
         "replicaCount": { "type": "integer", "minimum": 1, "maximum": 5 },
         "resources": { "$ref": "#/$defs/resources" },
         "service": {
@@ -67,6 +69,7 @@
       "required": ["image", "replicaCount", "resources", "service"],
       "properties": {
         "image": { "$ref": "#/$defs/image" },
+        "extraEnv": { "$ref": "#/$defs/extraEnv" },
         "replicaCount": { "type": "integer", "minimum": 1, "maximum": 5 },
         "resources": { "$ref": "#/$defs/resources" },
         "service": {
@@ -85,10 +88,18 @@
   "$defs": {
     "image": {
       "type": "object",
-      "required": ["repository"],
+      "required": ["repository", "tag"],
       "properties": {
         "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string", "not": { "const": "latest" } }
+        "tag": { "type": "string", "minLength": 1, "not": { "enum": ["latest", "stable"] } }
+      }
+    },
+    "extraEnv": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
       }
     },
     "resources": {

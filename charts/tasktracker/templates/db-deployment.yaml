@@ -45,6 +45,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "tasktracker.secretName" . }}
                   key: POSTGRES_PASSWORD
+            {{- with .Values.database.extraEnv }}
+            # Extra variables from values (contract C2)
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.database.resources | nindent 12 }}
           volumeMounts:

@@ -42,5 +42,9 @@ spec:
                   name: {{ $secret }}
                   key: {{ . }}
             {{- end }}
+            {{- with .Values.backend.extraEnv }}
+            # Extra variables from values (contract C2)
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}

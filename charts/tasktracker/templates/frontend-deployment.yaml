@@ -31,5 +31,9 @@ spec:
                 configMapKeyRef:
                   name: {{ include "tasktracker.fullname" . }}-config
                   key: BACKEND_URL
+            {{- with .Values.frontend.extraEnv }}
+            # Extra variables from values (contract C2)
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
