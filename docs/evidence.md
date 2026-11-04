@@ -214,3 +214,241 @@ the values schema now allows `dev` and `staging`.
 Kinds rendered (needed for the Task 3 whitelist): ConfigMap, Deployment,
 PersistentVolumeClaim, Service. The smoke-test Job is added in Task 5.
 
+## Task 2
+
+### Render checks (step 2)
+
+```text
+$ kubectl kustomize bootstrap/argocd | grep -E '^kind: (Deployment|StatefulSet)$' | sort | uniq -c
+      6 kind: Deployment
+      1 kind: StatefulSet
+```
+
+```text
+$ kubectl kustomize bootstrap/argocd | grep 'image:' | sort -u
+        image: ghcr.io/dexidp/dex:v2.45.1
+        image: public.ecr.aws/docker/library/redis:8.2.3-alpine
+        image: quay.io/argoproj/argocd:v3.5.6
+```
+
+```text
+$ kubectl kustomize bootstrap/argocd | grep -E '^  namespace:' | sort | uniq -c
+     59   namespace: argocd
+```
+
+### Apply (step 3)
+
+```text
+$ kubectl apply -k bootstrap/argocd --server-side --force-conflicts
+namespace/argocd serverside-applied
+customresourcedefinition.apiextensions.k8s.io/applications.argoproj.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/applicationsets.argoproj.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/appprojects.argoproj.io serverside-applied
+serviceaccount/argocd-application-controller serverside-applied
+serviceaccount/argocd-applicationset-controller serverside-applied
+serviceaccount/argocd-dex-server serverside-applied
+serviceaccount/argocd-notifications-controller serverside-applied
+serviceaccount/argocd-redis serverside-applied
+serviceaccount/argocd-repo-server serverside-applied
+serviceaccount/argocd-server serverside-applied
+role.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-dex-server serverside-applied
+role.rbac.authorization.k8s.io/argocd-notifications-controller serverside-applied
+role.rbac.authorization.k8s.io/argocd-redis serverside-applied
+role.rbac.authorization.k8s.io/argocd-server serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+clusterrole.rbac.authorization.k8s.io/argocd-server serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-dex-server serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-notifications-controller serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-redis serverside-applied
+rolebinding.rbac.authorization.k8s.io/argocd-server serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-application-controller serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-applicationset-controller serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/argocd-server serverside-applied
+configmap/argocd-cm serverside-applied
+configmap/argocd-cmd-params-cm serverside-applied
+configmap/argocd-gpg-keys-cm serverside-applied
+configmap/argocd-notifications-cm serverside-applied
+configmap/argocd-rbac-cm serverside-applied
+configmap/argocd-ssh-known-hosts-cm serverside-applied
+configmap/argocd-tls-certs-cm serverside-applied
+secret/argocd-notifications-secret serverside-applied
+secret/argocd-secret serverside-applied
+service/argocd-applicationset-controller serverside-applied
+service/argocd-dex-server serverside-applied
+service/argocd-metrics serverside-applied
+service/argocd-notifications-controller-metrics serverside-applied
+service/argocd-redis serverside-applied
+service/argocd-repo-server serverside-applied
+service/argocd-server serverside-applied
+service/argocd-server-metrics serverside-applied
+deployment.apps/argocd-applicationset-controller serverside-applied
+deployment.apps/argocd-dex-server serverside-applied
+deployment.apps/argocd-notifications-controller serverside-applied
+deployment.apps/argocd-redis serverside-applied
+deployment.apps/argocd-repo-server serverside-applied
+deployment.apps/argocd-server serverside-applied
+statefulset.apps/argocd-application-controller serverside-applied
+networkpolicy.networking.k8s.io/argocd-application-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-applicationset-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-dex-server-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-notifications-controller-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-redis-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-repo-server-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-server-network-policy serverside-applied
+```
+
+### Wait for components (step 4)
+
+```text
+$ kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s
+deployment.apps/argocd-applicationset-controller condition met
+deployment.apps/argocd-dex-server condition met
+deployment.apps/argocd-notifications-controller condition met
+deployment.apps/argocd-redis condition met
+timed out waiting for the condition on deployments/argocd-repo-server
+timed out waiting for the condition on deployments/argocd-server
+```
+
+```text
+$ kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s
+partitioned roll out complete: 1 new pods have been updated...
+```
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS             RESTARTS      AGE
+argocd-application-controller-0                     1/1     Running            0             5m7s
+argocd-applicationset-controller-58bb5c7479-lb67f   1/1     Running            0             5m7s
+argocd-dex-server-dd6b85d9c-jc4pd                   0/1     Error              3 (75s ago)   5m7s
+argocd-notifications-controller-6b85c65458-c6v7s    1/1     Running            0             5m7s
+argocd-redis-869b85489d-2njct                       1/1     Running            0             5m7s
+argocd-repo-server-5bf66565cd-f74df                 0/1     CrashLoopBackOff   4 (4s ago)    5m7s
+argocd-server-7474bb8f76-dbbxk                      1/1     Running            0             5m7s
+```
+
+```text
+$ kubectl get crd | grep argoproj.io
+applications.argoproj.io      2026-11-04T17:06:22Z
+applicationsets.argoproj.io   2026-11-04T17:06:23Z
+appprojects.argoproj.io       2026-11-04T17:06:23Z
+```
+
+The first wait failed: `argocd-repo-server` and `argocd-server` timed out, and dex was restarting. The laptop disk had filled up (0 bytes free). The repo-server log showed the cause:
+
+```text
+$ kubectl logs -n argocd deploy/argocd-repo-server --previous --tail=5
+Defaulted container "argocd-repo-server" out of: argocd-repo-server, copyutil (init)
+{"built":"2026-10-20T18:33:20Z","commit":"c2b1e3017e2cec86b122172e861dcd026453ae44","level":"info","msg":"ArgoCD Repository Server is starting","port":8081,"time":"2026-11-04T17:13:03Z","version":"v3.5.6"}
+{"level":"info","msg":"Loading Redis credentials from environment variables","time":"2026-11-04T17:13:03Z"}
+{"level":"info","msg":"Generating self-signed TLS certificate for this session","time":"2026-11-04T17:13:03Z"}
+{"level":"fatal","msg":"failed to initialize the repo service: mkdir /tmp/_argocd-repo: no space left on device","time":"2026-11-04T17:13:03Z"}
+```
+
+I freed about 17 GB (old Docker images and rebuildable caches, with my approval) and ran the wait again. No change was made to the cluster or the repository.
+
+```text
+$ kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s
+deployment.apps/argocd-applicationset-controller condition met
+deployment.apps/argocd-dex-server condition met
+deployment.apps/argocd-notifications-controller condition met
+deployment.apps/argocd-redis condition met
+deployment.apps/argocd-repo-server condition met
+deployment.apps/argocd-server condition met
+```
+
+```text
+$ kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s
+partitioned roll out complete: 1 new pods have been updated...
+```
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS    RESTARTS        AGE
+argocd-application-controller-0                     1/1     Running   0               9m55s
+argocd-applicationset-controller-58bb5c7479-lb67f   1/1     Running   0               9m55s
+argocd-dex-server-dd6b85d9c-jc4pd                   1/1     Running   6 (3m9s ago)    9m55s
+argocd-notifications-controller-6b85c65458-c6v7s    1/1     Running   0               9m55s
+argocd-redis-869b85489d-2njct                       1/1     Running   0               9m55s
+argocd-repo-server-5bf66565cd-f74df                 1/1     Running   6 (3m15s ago)   9m55s
+argocd-server-7474bb8f76-dbbxk                      1/1     Running   0               9m55s
+```
+
+```text
+$ kubectl get crd | grep argoproj.io
+applications.argoproj.io      2026-11-04T17:06:22Z
+applicationsets.argoproj.io   2026-11-04T17:06:23Z
+appprojects.argoproj.io       2026-11-04T17:06:23Z
+```
+
+### Sign-in and settings (steps 5 and 6)
+
+The port-forward ran in its own terminal. I printed the initial admin password and ran `argocd login` myself in my own terminal, so neither the password nor the login prompt is recorded here. Check that the CLI is signed in:
+
+```text
+$ argocd account get-user-info
+{"level":"fatal","msg":"Argo CD server address unspecified","time":"2026-11-05T00:19:55+06:00"}
+```
+
+```text
+$ kubectl get configmap argocd-cm -n argocd -o yaml | grep -E 'timeout.reconciliation|accounts.reviewer'
+  accounts.reviewer: login
+  timeout.reconciliation: 60s
+  timeout.reconciliation.jitter: 10s
+```
+
+```text
+$ argocd version
+argocd: v3.5.6
+  BuildDate: 2026-10-20T18:33:20Z
+  GitCommit: c2b1e3017e2cec86b122172e861dcd026453ae44
+  GitTreeState: clean
+  GitTag: v3.5.6
+  GoVersion: go1.26.10
+  Compiler: gc
+  Platform: linux/amd64
+{"level":"fatal","msg":"Argo CD server address unspecified","time":"2026-11-05T00:19:55+06:00"}
+```
+
+The `argocd account get-user-info` above failed because my `argocd login` had not finished yet (the password prompt was still waiting). After I completed the login in my own terminal (it printed `'admin:login' logged in successfully`), I ran the checks again:
+
+```text
+$ argocd account get-user-info
+Logged In: true
+Username: admin
+Issuer: argocd
+Groups: 
+```
+
+```text
+$ argocd version
+argocd: v3.5.6
+  BuildDate: 2026-10-20T18:33:20Z
+  GitCommit: c2b1e3017e2cec86b122172e861dcd026453ae44
+  GitTreeState: clean
+  GitTag: v3.5.6
+  GoVersion: go1.26.10
+  Compiler: gc
+  Platform: linux/amd64
+argocd-server: v3.5.6
+  BuildDate: 2026-10-20T18:33:20Z
+  GitCommit: c2b1e3017e2cec86b122172e861dcd026453ae44
+  GitTreeState: clean
+  GitTag: v3.5.6
+  GoVersion: go1.26.10
+  Compiler: gc
+  Platform: linux/amd64
+  Kustomize Version: v5.8.1 2026-02-09T16:15:27Z
+  Helm Version: v4.2.1+gd591a19
+  Kubectl Version: v0.36.1
+  Jsonnet Version: v0.22.0
+```
+
+### Screenshot
+
+`docs/screenshots/task2-argocd-ui.png`: the Argo CD v3.5.6 UI after signing in as admin (no Applications yet).
+

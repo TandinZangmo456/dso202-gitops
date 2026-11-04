@@ -38,3 +38,17 @@ Both `helm lint` runs were clean, and the chart renders only ConfigMap, Deployme
 ![Figure 1: kind cluster, port mapping and helm lint for both environments](screenshots/task1-cluster-and-lint.png)
 
 *Figure 1: kind cluster, port mapping and helm lint for both environments*
+
+### Task 2: Install Argo CD declaratively
+
+I saved Listings 2 to 5 in `bootstrap/argocd/` and committed them before applying anything. The kustomization points at the upstream `install.yaml` for the exact tag `v3.5.6`, and two patches add my own settings: a 60 second polling interval, the `reviewer` account, the health check for Application objects, and an RBAC policy that only lets `reviewer` read the `dso202` project.
+
+Before applying, I rendered the result with `kubectl kustomize`. It had 6 Deployments and 1 StatefulSet. All 59 namespaced objects were in `argocd`, and the images came from ghcr.io, public.ecr.aws and quay.io, so none of them count against the Docker Hub pull limit. I then applied it with server-side apply as the brief says, and every object was created.
+
+This is where I hit my biggest problem so far. While the Pods were starting, my laptop disk filled up completely. The first wait timed out for `argocd-repo-server` and `argocd-server`, and the repo-server log said `mkdir /tmp/_argocd-repo: no space left on device`. My shell could not even show output any more. I checked what was using the space and removed old Docker images from other courses, the Docker build cache, and some rebuildable caches. That freed about 17 GB. I did not change anything in the cluster or in Git. Once there was space, the Pods restarted by themselves, and the second wait passed with all seven Pods `Running` and the three CRDs present.
+
+Signing in also took a few tries. I ran `argocd login` through the chat panel, which cannot pass keyboard input to the password prompt, so the login never finished. My first `argocd account get-user-info` failed with "server address unspecified", and I kept that in the evidence. I then did the login in a normal terminal window, where it worked. `argocd version` shows that both the client and the server are v3.5.6, and the `argocd-cm` ConfigMap has my three settings.
+
+![Figure 2: Argo CD UI after signing in as admin](screenshots/task2-argocd-ui.png)
+
+*Figure 2: Argo CD UI after signing in as admin*
