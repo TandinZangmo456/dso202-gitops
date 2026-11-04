@@ -1,0 +1,53 @@
+# =============================================================================
+# File        : argocd/applications/platform-staging.yaml
+# Assignment  : DSO202 Assignment 4
+# Descriptor  : Unit IV 4.3.1 - Application CRDs; 4.3.2 - sync policies
+# Purpose     : Delivers the platform objects of the staging environment: the
+#               namespace, ResourceQuota, LimitRange, Role and RoleBinding from
+#               Assignment 2, and the separately sealed staging credentials.
+# Derived from: argocd/applications/platform-dev.yaml (Listing 10). Only the
+#               name, the path (platform/staging), and the destination
+#               namespace (dso202-staging) differ. The platform layer is
+#               automated in staging too: the manual gate applies to the
+#               workloads (tasktracker-staging), not to the namespace and quota.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-staging
+  namespace: argocd
+  annotations:
+    # Wave -1: after the Sealed Secrets controller (wave -2), before the
+    # workloads (wave 0).
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+
+  source:
+    repoURL: https://github.com/TandinZangmo456/dso202-gitops.git
+    targetRevision: main
+    # A plain directory of manifests: no chart, no templating.
+    path: platform/staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dso202-staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The SealedSecret kind is registered by the controller installed in the
+      # previous wave. If the platform Application is evaluated before that
+      # registration is visible, this option lets the sync proceed instead of
+      # failing the dry run, and the retry below covers any remaining gap.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
