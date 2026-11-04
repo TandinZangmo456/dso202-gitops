@@ -9,5 +9,5 @@ The backend is ClusterIP only. To call the API from your machine:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "tasktracker.backendName" . }} 8080:{{ .Values.backend.service.port }}
   curl http://localhost:8080/api/status
 
-Check the whole chain from inside the cluster:
-  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+Under Argo CD the PostSync smoke-test Job checks the whole chain:
+  kubectl logs job/{{ .Release.Name }}-smoke-test -n {{ .Release.Namespace }}

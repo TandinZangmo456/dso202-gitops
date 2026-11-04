@@ -11,7 +11,7 @@ Every name starts with "tasktracker." because named templates are global.
 
 {{/*
 tasktracker.fullname: the base name of every object, limited to 63 characters.
-A release called "task-tracker" gives "task-tracker", not "task-tracker-task-tracker".
+A release called "tasktracker" gives "tasktracker", not "tasktracker-tasktracker".
 */}}
 {{- define "tasktracker.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -33,7 +33,7 @@ A release called "task-tracker" gives "task-tracker", not "task-tracker-task-tra
 
 {{/* tasktracker.environment: stops rendering when no environment is chosen. */}}
 {{- define "tasktracker.environment" -}}
-{{- required "environment must be set to dev or prod (use -f environments/<env>.yaml)" .Values.environment }}
+{{- required "environment must be set to dev or staging (use -f environments/<env>/values.yaml)" .Values.environment }}
 {{- end }}
 
 {{/* Object names for each tier. Used by the objects AND by the ConfigMap. */}}

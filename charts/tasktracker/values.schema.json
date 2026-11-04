@@ -16,7 +16,7 @@
       "enum": [
         "",
         "dev",
-        "prod"
+        "staging"
       ]
     },
     "image": {
