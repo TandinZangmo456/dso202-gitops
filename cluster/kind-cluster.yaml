@@ -1,8 +1,11 @@
 # =============================================================================
 # File        : cluster/kind-cluster.yaml
-# Practical   : DSO202 Practical 1
-# Apply with  : kind create cluster --config cluster/kind-cluster.yaml
-# Delete with : kind delete cluster --name dso202
+# Assignment  : DSO202 Assignment 4 (copied from DSO202 Practical 1)
+# Descriptor  : Unit I 1.3 - local cluster with kind
+# Purpose     : Three-node kind cluster. Host port 30080 is mapped to the dev
+#               frontend NodePort; staging (30081) is reached by port-forward.
+# Apply with  : kind create cluster --name dso202-gitops --config cluster/kind-cluster.yaml
+# Delete with : kind delete cluster --name dso202-gitops
 # =============================================================================
 
 
@@ -10,10 +13,11 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 
 # The cluster name. It determines two things:
-#   - the Docker container names: dso202-control-plane, dso202-worker,
-#     dso202-worker2
-#   - the kubectl context name: kind-dso202
-name: dso202
+#   - the Docker container names: dso202-gitops-control-plane,
+#     dso202-gitops-worker, dso202-gitops-worker2
+#   - the kubectl context name: kind-dso202-gitops
+# Changed from 'dso202' (Practical 1) so it matches the --name used in Task 1.
+name: dso202-gitops
 
 networking:
   # Publish the API server on the loopback interface only. On a shared or
