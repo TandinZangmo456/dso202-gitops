@@ -52,3 +52,15 @@ Signing in also took a few tries. I ran `argocd login` through the chat panel, w
 ![Figure 2: Argo CD UI after signing in as admin](screenshots/task2-argocd-ui.png)
 
 *Figure 2: Argo CD UI after signing in as admin*
+
+### Task 3: AppProjects and the root Application
+
+First I compared the project whitelist in Listing 8 with what my chart really renders. The listing allows Deployment, StatefulSet, Service, ConfigMap, ServiceAccount and Job. My chart renders Deployment, Service, ConfigMap and PersistentVolumeClaim, plus the smoke-test Job that comes in Task 5. My database is a Deployment with a volume claim, not a StatefulSet, and the chart has no ServiceAccount. The brief says the list must match exactly, so I removed StatefulSet and ServiceAccount and added PersistentVolumeClaim with a comment explaining why.
+
+I saved Listings 6, 7 and 8 with my GitHub user name and checked that the repository URL was spelled the same way in all three files. I pushed to `main` before applying anything, because the root reads `argocd/` from GitHub and not from my laptop.
+
+After `kubectl apply -f bootstrap/root`, the root became `Synced` and `Healthy` within a few seconds. The three projects `default`, `platform` and `dso202` exist. `dso202` was created by the root, not by me. It appears in the resource list of `argocd app get root`, and its tracking annotation names the root, while `platform` has no such annotation. kubectl printed a warning about the finalizer name not being domain-qualified. This comes from the finalizer that the listing uses on purpose, so I left it as it is.
+
+![Figure 3: root Application resource tree](screenshots/task3-root-app-tree.png)
+
+*Figure 3: root Application resource tree*

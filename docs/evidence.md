@@ -452,3 +452,124 @@ argocd-server: v3.5.6
 
 `docs/screenshots/task2-argocd-ui.png`: the Argo CD v3.5.6 UI after signing in as admin (no Applications yet).
 
+## Task 3
+
+### Whitelist compared with the chart (step 1)
+
+Kinds the chart renders (the smoke-test Job is added in Task 5):
+
+```text
+$ helm template tasktracker charts/tasktracker -f environments/dev/values.yaml | grep '^kind:' | sort | uniq -c
+      1 kind: ConfigMap
+      3 kind: Deployment
+      1 kind: PersistentVolumeClaim
+      3 kind: Service
+```
+
+Final whitelist in `argocd/projects/dso202.yaml`:
+
+```text
+$ grep -A12 '^  namespaceResourceWhitelist:' argocd/projects/dso202.yaml | grep -E 'group|kind'
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: batch
+      kind: Job
+```
+
+Compared with Listing 8: StatefulSet and ServiceAccount were removed because my chart renders neither (the database is a Deployment with a PersistentVolumeClaim). PersistentVolumeClaim was added, with a comment, because the chart renders `tasktracker-db-data`. Job stays for the PostSync smoke test. No Namespace, ResourceQuota, LimitRange, Role, RoleBinding or SealedSecret is listed.
+
+### Apply the bootstrap layer (step 4)
+
+Committed and pushed first:
+
+```text
+$ git ls-remote origin main
+e5d19a347b2f6d973f24e92e0fa58356865fcdb4	refs/heads/main
+```
+
+```text
+$ kubectl apply -f bootstrap/root
+appproject.argoproj.io/platform created
+Warning: metadata.finalizers: "resources-finalizer.argocd.argoproj.io": prefer a domain-qualified finalizer name including a path (/) to avoid accidental conflicts with other finalizer writers
+application.argoproj.io/root created
+```
+
+### Result (step 5)
+
+```text
+$ kubectl get appproject,application -n argocd
+NAME                              AGE
+appproject.argoproj.io/default    98m
+appproject.argoproj.io/dso202     7s
+appproject.argoproj.io/platform   12s
+
+NAME                           SYNC STATUS   HEALTH STATUS
+application.argoproj.io/root   Synced        Healthy
+```
+
+```text
+$ argocd app get root
+Name:               argocd/root
+Project:            platform
+Server:             https://kubernetes.default.svc
+Namespace:          argocd
+URL:                https://localhost:8080/applications/root
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           main
+  Path:             argocd
+SyncWindow:         Sync Allowed
+Sync Policy:        Automated (Prune)
+Sync Status:        Synced to main (e5d19a3)
+Health Status:      Healthy
+
+GROUP        KIND        NAMESPACE  NAME    STATUS  HEALTH  HOOK  MESSAGE
+argoproj.io  AppProject  argocd     dso202  Synced                appproject.argoproj.io/dso202 unchanged
+```
+
+```text
+$ argocd proj get dso202
+Name:                        dso202
+Description:                 Task Tracker workloads for the dev and staging environments
+Destinations:                https://kubernetes.default.svc,dso202-dev
+                             https://kubernetes.default.svc,dso202-staging
+Repositories:                https://github.com/TandinZangmo456/dso202-gitops.git
+Source Namespaces:           <none>
+Scoped Repositories:         <none>
+Allowed Cluster Resources:   <none>
+Scoped Clusters:             <none>
+Denied Namespaced Resources: <none>
+Signature keys:              <none>
+Orphaned Resources:          disabled
+```
+
+`argocd proj get` does not print the namespaced whitelist, so it is read from the object. The tracking annotation shows that the `root` Application created `dso202`; `platform` (applied by hand) has none:
+
+```text
+$ kubectl get appproject dso202 -n argocd -o jsonpath='{range .spec.namespaceResourceWhitelist[*]}{.group}/{.kind}{"\n"}{end}'
+apps/Deployment
+/Service
+/ConfigMap
+/PersistentVolumeClaim
+batch/Job
+```
+
+```text
+$ kubectl get appproject dso202 platform -n argocd -o custom-columns='NAME:.metadata.name,TRACKING-ID:.metadata.annotations.argocd\.argoproj\.io/tracking-id'
+NAME       TRACKING-ID
+dso202     root:argoproj.io/AppProject:argocd/dso202
+platform   <none>
+```
+
+### Screenshot
+
+`docs/screenshots/task3-root-app-tree.png`: the root Application, Synced and Healthy, with the dso202 AppProject as its only resource.
+
+Answer Q1: see README.md.
+

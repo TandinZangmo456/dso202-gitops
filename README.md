@@ -41,3 +41,25 @@ Database credentials are stored here only as SealedSecrets.
 
 (Bootstrap commands, cleanup, credential handling and the answers to Q1 to Q6
 are added as the tasks are done.)
+
+## Written answers
+
+### Q1. Why is `platform` applied by hand while `dso202` is created by the root, and what is the risk if `dso202` may deploy into `argocd`?
+
+Every Application has to belong to a project, and that project must already
+exist when the Application is created. The root Application belongs to
+`platform`, so `platform` cannot be created by the root: it is needed before the
+root exists. That is why `platform` and the root are the two files I apply by
+hand in `bootstrap/root`. Once the root is running, every other Argo CD object,
+including the `dso202` project, is just a file under `argocd/` that the root
+delivers. My cluster shows this: `dso202` has the tracking annotation
+`root:argoproj.io/AppProject:argocd/dso202` and appears in the resource list of
+`argocd app get root`, while `platform` has no tracking annotation at all.
+
+Applications and AppProjects are themselves objects in the `argocd` namespace.
+If `dso202` were allowed to deploy into `argocd`, then a commit to the chart
+could add an Application that names the `platform` project (which allows every
+kind and every namespace), or could edit an AppProject or `argocd-rbac-cm`.
+The workload project would then be able to give itself administrator rights,
+and the whole least-privilege split between `platform` and `dso202` would mean
+nothing. That is why only `platform` may target `argocd`.
