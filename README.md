@@ -112,3 +112,32 @@ deadline runs out. Task 7 does exactly that.
 
 The opposite also happens. `tasktracker-staging` was `OutOfSync` and `Missing`
 before its first manual sync: Git describes objects that do not exist yet.
+
+### Q4. What does Argo CD RBAC control, what does Kubernetes RBAC control, where is each configured, and what would change with SSO?
+
+Argo CD RBAC controls what a person may do through Argo CD itself: which
+Applications and projects they can see, and whether they can sync, delete or
+read logs. It is configured in the `argocd-rbac-cm` ConfigMap (my
+`bootstrap/argocd/argocd-rbac-cm-patch.yaml`), and the accounts are declared in
+`argocd-cm`. The API server of Argo CD checks these rules. Kubernetes never sees
+the `reviewer` user, because Argo CD talks to the cluster with its own service
+account.
+
+Kubernetes RBAC, which I used in Assignment 2, controls what a user or service
+account may do directly against the Kubernetes API, for example with `kubectl`.
+It is configured with Role, ClusterRole, RoleBinding and ClusterRoleBinding
+objects. My `task-reader` Role and RoleBinding in `platform/<env>/rbac.yaml` are
+an example. So `reviewer` cannot sync in Argo CD, but that says nothing about
+what a person with a kubeconfig can do, and the other way round.
+
+In Task 6 I also found that a third thing limits what Argo CD shows: the
+project's resource whitelist. Pod logs only appeared after I added ReplicaSet
+and Pod to the `dso202` project, even though the logs rule was already in place.
+
+With SSO, the users would come from the organisation's identity provider and
+not from `accounts.*` entries in `argocd-cm`. In `policy.csv` I would then bind
+roles to the identity provider's groups instead of to single local accounts,
+for example a role `role:dso202-reviewer` with the same three `p,` lines, and a
+line `g, <idp-group-name>, role:dso202-reviewer`. People would get or lose
+access by joining or leaving the group, and the local `reviewer` account could
+be removed.

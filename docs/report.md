@@ -126,3 +126,17 @@ My first `argocd app sync tasktracker-staging` failed with "connection refused".
 ![Figure 5: tasktracker-dev resource tree in the Argo CD UI](screenshots/task5-tasktracker-dev-tree.png)
 
 *Figure 5: tasktracker-dev resource tree in the Argo CD UI*
+
+### Task 6: Access control for Argo CD users
+
+`argocd account list` showed the two accounts, `admin` and `reviewer`. I set the reviewer password and signed in as reviewer under its own CLI context, so the admin session was kept. In the CLI, reviewer saw only `tasktracker-dev` and `tasktracker-staging`. `can-i get applications` said yes, while `can-i sync` and `can-i get logs` said no, and reading the `platform` project was denied.
+
+My first UI test went wrong. The private window was signed in as admin, not reviewer, so when I pressed Sync the sync was accepted. It only re-synced dev to the commit it was already on. I recorded it, signed out, and checked the server log and the User Info page before trying again as reviewer. This time Sync was refused with "permission denied", and the Deployment panel had no Logs tab.
+
+I then enabled the logs line in the RBAC patch, committed it, and applied the bootstrap layer again. This ConfigMap is not managed by the root, so the commit alone would not have changed anything in the cluster. `can-i get logs` changed to yes, but the UI still showed no logs. The Pods were missing from the Argo CD tree, even for admin. The Argo CD documentation explains that a project hides every child resource whose kind it does not permit, and my `dso202` whitelist only had the five kinds the chart renders. This clashes with the Task 3 rule that the list must match the chart exactly, so I had to choose. I added ReplicaSet and Pod to the project in a separate commit with a comment. The cost is that the project could now also create a bare Pod. After that the Pods appeared in the tree.
+
+The log viewer was still blank. The server log showed that following a log failed on my laptop with "too many open files", because only 128 inotify instances are allowed per user. I switched off the Follow button, and the reviewer could read the backend Pod logs.
+
+![Figure 6: reviewer session showing the backend Pod logs](screenshots/task6-reviewer-pod-logs.png)
+
+*Figure 6: reviewer session showing the backend Pod logs*
