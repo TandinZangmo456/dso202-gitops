@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "task-tracker values",
+  "title": "tasktracker values",
   "type": "object",
   "required": ["environment", "image", "config", "credentials", "database", "backend", "frontend", "governance"],
   "properties": {

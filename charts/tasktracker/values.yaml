@@ -1,4 +1,4 @@
-# values.yaml - default configuration of the task-tracker chart.
+# values.yaml - default configuration of the tasktracker chart.
 # The defaults are the dev sizing. environments/prod.yaml overrides them.
 # Override with -f <file> or --set <key>=<value>.
 

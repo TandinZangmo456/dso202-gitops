@@ -2,24 +2,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "task-tracker.frontendName" . }}
+  name: {{ include "tasktracker.frontendName" . }}
   labels:
-    {{- include "task-tracker.labels" $tier | nindent 4 }}
+    {{- include "tasktracker.labels" $tier | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
   selector:
     matchLabels:
-      {{- include "task-tracker.selectorLabels" $tier | nindent 6 }}
+      {{- include "tasktracker.selectorLabels" $tier | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "task-tracker.labels" $tier | nindent 8 }}
+        {{- include "tasktracker.labels" $tier | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       containers:
         - name: frontend
-          image: {{ include "task-tracker.image" (dict "ctx" . "image" .Values.frontend.image) | quote }}
+          image: {{ include "tasktracker.image" (dict "ctx" . "image" .Values.frontend.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -29,7 +29,7 @@ spec:
             - name: BACKEND_URL
               valueFrom:
                 configMapKeyRef:
-                  name: {{ include "task-tracker.fullname" . }}-config
+                  name: {{ include "tasktracker.fullname" . }}-config
                   key: BACKEND_URL
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}

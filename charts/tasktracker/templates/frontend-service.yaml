@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "task-tracker.frontendName" . }}
+  name: {{ include "tasktracker.frontendName" . }}
   labels:
-    {{- include "task-tracker.labels" $tier | nindent 4 }}
+    {{- include "tasktracker.labels" $tier | nindent 4 }}
 spec:
   type: NodePort                  # the only tier reachable from outside the cluster
   selector:
-    {{- include "task-tracker.selectorLabels" $tier | nindent 4 }}
+    {{- include "tasktracker.selectorLabels" $tier | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.frontend.service.port }}

@@ -6,9 +6,9 @@ Helm creates these before the Deployments (it orders objects by kind).
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: {{ include "task-tracker.fullname" . }}-quota
+  name: {{ include "tasktracker.fullname" . }}-quota
   labels:
-    {{- include "task-tracker.commonLabels" . | nindent 4 }}
+    {{- include "tasktracker.commonLabels" . | nindent 4 }}
 spec:
   hard:
     {{- range $k, $v := .Values.governance.quota }}
@@ -18,9 +18,9 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: {{ include "task-tracker.fullname" . }}-limits
+  name: {{ include "tasktracker.fullname" . }}-limits
   labels:
-    {{- include "task-tracker.commonLabels" . | nindent 4 }}
+    {{- include "tasktracker.commonLabels" . | nindent 4 }}
 spec:
   limits:
     - type: Container
