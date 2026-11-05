@@ -1621,3 +1621,79 @@ Task 8 was done before Task 7. Task 7 needs the frontend and backend `1.1` image
 ### Drill 1: drift in dev
 
 **Prediction (written and committed before the drill):** Because `tasktracker-dev` has `selfHeal: true`, Argo CD will notice the scaled Deployment within a few seconds and set it back to 1 replica, so the two extra backend Pods will be created and then terminated, and the Application will end `Synced` and `Healthy`.
+
+I started `kubectl get deployment/tasktracker-backend -n dso202-dev -w` and a watch on the backend Pods (each line prefixed with `date +%T`) before the change.
+
+```text
+$ kubectl get deployment -n dso202-dev
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+tasktracker-backend    1/1     1            1           15h
+tasktracker-db         1/1     1            1           15h
+tasktracker-frontend   1/1     1            1           15h
+```
+
+```text
+$ date +%T; kubectl scale deployment/tasktracker-backend -n dso202-dev --replicas=3
+16:52:52
+deployment.apps/tasktracker-backend scaled
+```
+
+```text
+$ cat ../watch-logs/drill1-deploy-watch.log
+16:52:49 NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+16:52:49 tasktracker-backend   1/1     1            1           15h
+16:52:52 tasktracker-backend   1/3     1            1           15h
+16:52:52 tasktracker-backend   1/3     1            1           15h
+16:52:52 tasktracker-backend   1/3     1            1           15h
+16:52:52 tasktracker-backend   1/3     3            1           15h
+16:52:53 tasktracker-backend   1/1     3            1           15h
+16:52:53 tasktracker-backend   1/1     3            1           15h
+16:52:53 tasktracker-backend   1/1     3            1           15h
+16:52:53 tasktracker-backend   1/1     1            1           15h
+16:53:23 tasktracker-backend   1/1     1            1           15h
+16:53:23 tasktracker-backend   1/1     1            1           15h
+```
+
+```text
+$ cat ../watch-logs/drill1-pods-watch.log
+16:52:49 NAME                                   READY   STATUS    RESTARTS      AGE
+16:52:49 tasktracker-backend-55bf5d6bd6-c8rng   1/1     Running   1 (22m ago)   15h
+16:52:52 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Pending   0             0s
+16:52:52 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Pending   0             0s
+16:52:52 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Pending   0             0s
+16:52:52 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Pending   0             0s
+16:52:52 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     ContainerCreating   0             0s
+16:52:52 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     ContainerCreating   0             0s
+16:52:53 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Terminating         0             1s
+16:52:53 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Terminating         0             1s
+16:52:53 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Terminating         0             1s
+16:52:53 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Terminating         0             1s
+16:52:53 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Terminating         0             1s
+16:52:53 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Terminating         0             1s
+16:52:58 tasktracker-backend-55bf5d6bd6-vsv6v   1/1     Terminating         0             6s
+16:52:58 tasktracker-backend-55bf5d6bd6-nlbrc   1/1     Terminating         0             6s
+16:53:23 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Error               0             31s
+16:53:23 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Error               0             31s
+16:53:24 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Error               0             32s
+16:53:24 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Error               0             32s
+16:53:24 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Error               0             32s
+16:53:24 tasktracker-backend-55bf5d6bd6-nlbrc   0/1     Error               0             32s
+16:53:24 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Error               0             32s
+16:53:24 tasktracker-backend-55bf5d6bd6-vsv6v   0/1     Error               0             32s
+```
+
+```text
+$ kubectl get deployment/tasktracker-backend -n dso202-dev; argocd app get tasktracker-dev | grep -E '^(Sync|Health) Status'
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+tasktracker-backend   1/1     1            1           15h
+Sync Status:        Synced to main (192980b)
+Health Status:      Healthy
+```
+
+**Observation:** I scaled the backend to 3 at 16:52:52. The Deployment showed `1/3` that same second, and two new Pods were created. At 16:52:53, one second later, the Deployment was back to `1/1`, and both new Pods were already `Terminating`. They took about 30 seconds to stop and ended in `Error`. That is the default 30 second grace period, so it seems the backend process does not exit on SIGTERM. The Application stayed `Synced` and `Healthy`, and nothing was restored by hand.
+
+**Did the prediction hold?** Yes, and faster than I expected (about one second, not "a few seconds"). Self-heal (`selfHeal: true` in Listing 14) makes Argo CD apply the Git state again as soon as the live Deployment differs from it. This is the fourth principle: the system is continuously reconciled.
+
+### Drill 2: drift in staging
+
+**Prediction (written and committed before the drill):** Staging has no automated sync, so after scaling to 3 the three backend Pods will stay up and `tasktracker-staging` will turn `OutOfSync` (still `Healthy`), `argocd app diff` will show `replicas: 3` against `replicas: 1`, and only my manual `argocd app sync` will bring it back to 1 replica.
