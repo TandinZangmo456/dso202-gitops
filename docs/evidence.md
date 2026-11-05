@@ -1870,3 +1870,145 @@ dso202-dev   Active   15h
 ### Drill 4: the project rejects a kind it does not permit
 
 **Prediction (written and committed before the drill):** After I push Listing 17, `tasktracker-dev` will turn `OutOfSync` and its automated sync will fail with a message saying that `ResourceQuota` is not permitted in project `dso202`, while the running Pods stay `Healthy`; staging will stay `Synced` because it renders the chart from tag `v1.0.0`, which does not contain the new file.
+```text
+$ git log --oneline -1; date +%T
+438b2a9 Task 8 drill 4: add a ResourceQuota to the chart (Listing 17)
+16:58:41
+```
+
+```text
+$ date +%T; argocd app get tasktracker-dev
+16:59:17
+Name:               argocd/tasktracker-dev
+Project:            dso202
+Server:             https://kubernetes.default.svc
+Namespace:          dso202-dev
+URL:                https://localhost:8080/applications/tasktracker-dev
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           main
+  Path:             charts/tasktracker
+  Helm Values:      ../../environments/dev/values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Automated (Prune)
+Sync Status:        OutOfSync from main (438b2a9)
+Health Status:      Healthy
+
+GROUP  KIND                   NAMESPACE   NAME                    STATUS   HEALTH   HOOK  MESSAGE
+       ResourceQuota          dso202-dev  drill-quota             Unknown  Missing        resource :ResourceQuota is not permitted in project dso202
+       ConfigMap              dso202-dev  tasktracker-config      Synced                  
+       PersistentVolumeClaim  dso202-dev  tasktracker-db-data     Synced   Healthy        
+       Service                dso202-dev  tasktracker-backend     Synced   Healthy        
+       Service                dso202-dev  tasktracker-db          Synced   Healthy        
+       Service                dso202-dev  tasktracker-frontend    Synced   Healthy        
+apps   Deployment             dso202-dev  tasktracker-backend     Synced   Healthy        
+apps   Deployment             dso202-dev  tasktracker-db          Synced   Healthy        
+apps   Deployment             dso202-dev  tasktracker-frontend    Synced   Healthy        
+batch  Job                    dso202-dev  tasktracker-smoke-test           Healthy        
+```
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       OutOfSync     Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+```text
+$ kubectl get resourcequota -n dso202-dev
+NAME               REQUEST                                                                                                                                                                         LIMIT                                             AGE
+assignment-quota   persistentvolumeclaims: 1/2, pods: 3/10, requests.cpu: 175m/500m, requests.memory: 352Mi/1Gi, requests.storage: 1Gi/2Gi, services.loadbalancers: 0/0, services.nodeports: 1/1   limits.cpu: 850m/2, limits.memory: 704Mi/1536Mi   15h
+```
+
+```text
+$ kubectl get application tasktracker-dev -n argocd -o jsonpath='{.status.operationState.phase}: {.status.operationState.message}{"\n"}'
+Running: one or more synchronization tasks are not valid: resource :ResourceQuota is not permitted in project dso202. Retrying attempt #2 at 10:59AM.
+```
+
+```text
+$ argocd app get tasktracker-staging | grep -E 'Target|^(Sync|Health) Status'
+  Target:           v1.0.0
+Sync Status:        Synced to v1.0.0 (63d4c4f)
+Health Status:      Healthy
+```
+
+```text
+$ git log --oneline -3; date +%T
+4caf713 Revert "Task 8 drill 4: add a ResourceQuota to the chart (Listing 17)"
+438b2a9 Task 8 drill 4: add a ResourceQuota to the chart (Listing 17)
+6e5df7c Task 8: record drill 3 and write the drill 4 prediction
+16:59:40
+```
+
+```text
+$ date +%T; argocd app get tasktracker-dev | sed -n '/^Sync Status/,$p'
+17:00:00
+Sync Status:        Synced to main (4caf713)
+Health Status:      Healthy
+
+GROUP  KIND                   NAMESPACE   NAME                    STATUS  HEALTH      HOOK  MESSAGE
+       ResourceQuota          dso202-dev  drill-quota                     SyncFailed        resource :ResourceQuota is not permitted in project dso202
+       ConfigMap              dso202-dev  tasktracker-config      Synced                    
+       PersistentVolumeClaim  dso202-dev  tasktracker-db-data     Synced  Healthy           
+       Service                dso202-dev  tasktracker-backend     Synced  Healthy           
+       Service                dso202-dev  tasktracker-db          Synced  Healthy           
+       Service                dso202-dev  tasktracker-frontend    Synced  Healthy           
+apps   Deployment             dso202-dev  tasktracker-backend     Synced  Healthy           
+apps   Deployment             dso202-dev  tasktracker-db          Synced  Healthy           
+apps   Deployment             dso202-dev  tasktracker-frontend    Synced  Healthy           
+batch  Job                    dso202-dev  tasktracker-smoke-test          Healthy           
+```
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+```text
+$ kubectl get application tasktracker-dev -n argocd -o jsonpath='{.status.operationState.syncResult.revision} {.status.operationState.phase}: {.status.operationState.message}{"\n"}'
+438b2a948313fd833dd618d129234c4aedad8fc3 Running: one or more synchronization tasks are not valid: resource :ResourceQuota is not permitted in project dso202. Retrying attempt #3 at 11:00AM.
+```
+
+```text
+$ argocd app history tasktracker-dev | tail -4
+SOURCE  https://github.com/TandinZangmo456/dso202-gitops.git
+ID      DATE                           REVISION
+0       2026-11-05 01:17:36 +0600 +06  main (d6403df)
+1       2026-11-05 01:52:12 +0600 +06  main (bd9f029)
+```
+
+```text
+$ date +%T; kubectl get application tasktracker-dev -n argocd -o jsonpath='{.status.operationState.syncResult.revision} {.status.operationState.phase}: {.status.operationState.message}{"\n"}'
+17:07:02
+438b2a948313fd833dd618d129234c4aedad8fc3 Failed: one or more synchronization tasks are not valid: resource :ResourceQuota is not permitted in project dso202 (retried 5 times).
+```
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+
+**Observation:** I pushed Listing 17 at 16:58:41 (commit 438b2a9). By 16:59:17 `tasktracker-dev` was `OutOfSync`, still `Healthy`, and the `drill-quota` row said `resource :ResourceQuota is not permitted in project dso202`. The automated sync failed with "one or more synchronization tasks are not valid: resource :ResourceQuota is not permitted in project dso202" and kept retrying. Nothing was created: the only ResourceQuota in `dso202-dev` is still `assignment-quota` from the platform layer. Staging stayed `Synced` to `v1.0.0 (63d4c4f)` the whole time. I reverted the commit at 16:59:40 (4caf713). At 17:00:00 dev was `Synced` to the revert and `Healthy`. The retries of the old sync operation for 438b2a9 went on in the background until 17:07:02 and then stopped with "(retried 5 times)". Dev stayed `Synced` and `Healthy` during this, because the revert had already made Git match the cluster again. Screenshots: `task8-drill4-quota-rejected.png` and `task8-drill4-after-revert.png`.
+
+**Did the prediction hold?** Yes. The `dso202` project only permits the kinds listed in its `namespaceResourceWhitelist`, and Argo CD checks every rendered object against it before applying anything, so a workload commit cannot add a quota (or any platform object) to its own namespace. Staging was unaffected because it renders the chart from the tag `v1.0.0`, and a tag does not move when `main` gets a new commit. One thing I did not predict: the failed sync went on retrying the old revision for about seven minutes after the revert, because of the retry block in Listing 14.
+
+### Screenshots for drills 1 and 2
+
+Drills 1 and 2 were already restored before I took screenshots, so `task8-drill1-dev-reverted.png` and `task8-drill2-staging-restored.png` were taken afterwards, at 17:07. They show records that already existed: the drill 1 watch log, and the Kubernetes `ScalingReplicaSet` events (scaled from 1 to 3, then from 3 to 1) in each namespace.

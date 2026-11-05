@@ -140,3 +140,27 @@ The log viewer was still blank. The server log showed that following a log faile
 ![Figure 6: reviewer session showing the backend Pod logs](screenshots/task6-reviewer-pod-logs.png)
 
 *Figure 6: reviewer session showing the backend Pod logs*
+
+### Task 8: Drift, pruning and project guardrails
+
+I did Task 8 before Task 7, because Task 7 needs 1.1 images that are not available yet, and none of the drills depends on them. For each drill I wrote the prediction in the evidence file and committed it before running anything. All four predictions held.
+
+In drill 1 I scaled the dev backend to 3 by hand. Argo CD set it back to 1 in about one second, much faster than I expected. The two extra Pods were killed after the 30 second grace period, which suggests the backend does not stop cleanly on SIGTERM. This is self-heal at work.
+
+In drill 2 I did the same in staging. Nothing changed by itself. Argo CD only marked staging `OutOfSync`, and the diff showed 3 replicas against 1. Only my manual sync put it back. This is the gate between dev and staging: Argo CD reports drift but does not act on it without a person.
+
+![Figure 7: drill 2, staging scaled to 3 and back to 1 only after a manual sync](screenshots/task8-drill2-staging-restored.png)
+
+*Figure 7: drill 2, staging scaled to 3 and back to 1 only after a manual sync*
+
+In drill 3 I added a throwaway ConfigMap to `platform/dev` and then removed it with `git rm`. It appeared in under a minute and was pruned 21 seconds after the second push. The namespace file is protected with `Prune=false`, because deleting a namespace would also delete the database volume. I explained this but did not test it.
+
+![Figure 8: drill 3, the ConfigMap pruned after the file was removed from Git](screenshots/task8-drill3-configmap-pruned.png)
+
+*Figure 8: drill 3, the ConfigMap pruned after the file was removed from Git*
+
+In drill 4 I added a ResourceQuota to the chart. The sync was refused with "resource :ResourceQuota is not permitted in project dso202", nothing was created, and staging stayed on `v1.0.0`. I restored dev by reverting the commit. One surprise was that the failed sync kept retrying the old commit for about seven minutes after the revert, until its five retries ran out. Dev stayed `Synced` and `Healthy` during that time.
+
+![Figure 9: drill 4, the ResourceQuota refused by the dso202 project](screenshots/task8-drill4-quota-rejected.png)
+
+*Figure 9: drill 4, the ResourceQuota refused by the dso202 project*
