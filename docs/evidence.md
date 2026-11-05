@@ -1697,3 +1697,120 @@ Health Status:      Healthy
 ### Drill 2: drift in staging
 
 **Prediction (written and committed before the drill):** Staging has no automated sync, so after scaling to 3 the three backend Pods will stay up and `tasktracker-staging` will turn `OutOfSync` (still `Healthy`), `argocd app diff` will show `replicas: 3` against `replicas: 1`, and only my manual `argocd app sync` will bring it back to 1 replica.
+```text
+$ kubectl get deployment -n dso202-staging
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+tasktracker-backend    1/1     1            1           15h
+tasktracker-db         1/1     1            1           15h
+tasktracker-frontend   1/1     1            1           15h
+```
+
+```text
+$ date +%T; kubectl scale deployment/tasktracker-backend -n dso202-staging --replicas=3
+16:54:02
+deployment.apps/tasktracker-backend scaled
+```
+
+```text
+$ date +%T; kubectl get deployment/tasktracker-backend -n dso202-staging; kubectl get pods -n dso202-staging -l app.kubernetes.io/component=backend
+16:54:32
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+tasktracker-backend   3/3     3            3           15h
+NAME                                   READY   STATUS    RESTARTS      AGE
+tasktracker-backend-54ff767596-2fq9g   1/1     Running   1 (23m ago)   15h
+tasktracker-backend-54ff767596-fn9h6   1/1     Running   0             30s
+tasktracker-backend-54ff767596-kzfbv   1/1     Running   0             30s
+```
+
+```text
+$ argocd app get tasktracker-staging
+Name:               argocd/tasktracker-staging
+Project:            dso202
+Server:             https://kubernetes.default.svc
+Namespace:          dso202-staging
+URL:                https://localhost:8080/applications/tasktracker-staging
+Source:
+- Repo:             https://github.com/TandinZangmo456/dso202-gitops.git
+  Target:           v1.0.0
+  Path:             charts/tasktracker
+  Helm Values:      ../../environments/staging/values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Manual
+Sync Status:        OutOfSync from v1.0.0 (63d4c4f)
+Health Status:      Healthy
+
+GROUP  KIND                   NAMESPACE       NAME                    STATUS     HEALTH   HOOK      MESSAGE
+       ConfigMap              dso202-staging  tasktracker-config      Synced                        configmap/tasktracker-config created
+       PersistentVolumeClaim  dso202-staging  tasktracker-db-data     Synced     Healthy            persistentvolumeclaim/tasktracker-db-data created
+       Service                dso202-staging  tasktracker-db          Synced     Healthy            service/tasktracker-db created
+       Service                dso202-staging  tasktracker-frontend    Synced     Healthy            service/tasktracker-frontend created
+       Service                dso202-staging  tasktracker-backend     Synced     Healthy            service/tasktracker-backend created
+apps   Deployment             dso202-staging  tasktracker-db          Synced     Healthy            deployment.apps/tasktracker-db created
+apps   Deployment             dso202-staging  tasktracker-backend     OutOfSync  Healthy            deployment.apps/tasktracker-backend created
+apps   Deployment             dso202-staging  tasktracker-frontend    Synced     Healthy            deployment.apps/tasktracker-frontend created
+batch  Job                    dso202-staging  tasktracker-smoke-test  Succeeded  Synced   PostSync  Reached expected number of succeeded pods
+```
+
+```text
+$ argocd app diff tasktracker-staging
+
+===== apps/Deployment dso202-staging/tasktracker-backend ======
+207c207
+<   replicas: 3
+---
+>   replicas: 1
+[exit code 1]
+```
+
+`argocd app diff` exits with code 1 when it finds a difference, so the exit code above is expected.
+
+```text
+$ argocd app sync tasktracker-staging --timeout 300 | sed -n '/^Sync Status/,/^Message/p;/^GROUP/,$p'
+Sync Status:        Synced to v1.0.0 (63d4c4f)
+Health Status:      Healthy
+
+Operation:          Sync
+Sync Revision:      63d4c4fc60e88718839cd052a8878b9edb4eaf9c
+Phase:              Succeeded
+Start:              2026-11-05 16:54:40 +0600 +06
+Finished:           2026-11-05 16:55:01 +0600 +06
+Duration:           21s
+Message:            successfully synced (no more tasks)
+GROUP  KIND                   NAMESPACE       NAME                    STATUS     HEALTH   HOOK      MESSAGE
+       ConfigMap              dso202-staging  tasktracker-config      Synced                        configmap/tasktracker-config unchanged
+       PersistentVolumeClaim  dso202-staging  tasktracker-db-data     Synced     Healthy            persistentvolumeclaim/tasktracker-db-data unchanged
+       Service                dso202-staging  tasktracker-backend     Synced     Healthy            service/tasktracker-backend unchanged
+       Service                dso202-staging  tasktracker-frontend    Synced     Healthy            service/tasktracker-frontend unchanged
+       Service                dso202-staging  tasktracker-db          Synced     Healthy            service/tasktracker-db unchanged
+apps   Deployment             dso202-staging  tasktracker-db          Synced     Healthy            deployment.apps/tasktracker-db unchanged
+apps   Deployment             dso202-staging  tasktracker-backend     Synced     Healthy            deployment.apps/tasktracker-backend configured
+apps   Deployment             dso202-staging  tasktracker-frontend    Synced     Healthy            deployment.apps/tasktracker-frontend unchanged
+batch  Job                    dso202-staging  tasktracker-smoke-test  Succeeded  Synced   PostSync  Reached expected number of succeeded pods
+```
+
+```text
+$ kubectl get deployment/tasktracker-backend -n dso202-staging; kubectl get pods -n dso202-staging -l app.kubernetes.io/component=backend
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+tasktracker-backend   1/1     1            1           15h
+NAME                                   READY   STATUS    RESTARTS      AGE
+tasktracker-backend-54ff767596-2fq9g   1/1     Running   1 (24m ago)   15h
+```
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+**Observation:** I scaled the staging backend to 3 at 16:54:02. Thirty seconds later all three backend Pods were `Running` and nothing had set them back. `tasktracker-staging` showed `OutOfSync` and still `Healthy`, and only the backend Deployment was marked `OutOfSync`. `argocd app diff` showed `replicas: 3` live against `replicas: 1` from Git. After my manual `argocd app sync`, the Deployment was `configured` back to 1 replica, the two extra Pods were removed, and all six Applications were `Synced` and `Healthy` again.
+
+**Did the prediction hold?** Yes. Argo CD compares staging with Git all the time and reports the drift, but staging has no `automated` block (Listing 15), so it never changes the cluster by itself. A person decides when staging changes, which is the approval gate between dev and staging.
+
+### Drill 3: removing a file prunes the object
+
+**Prediction (written and committed before the drill):** After I push Listing 16, the root will not deliver it but `platform-dev` will, so the `prune-drill` ConfigMap will appear in `dso202-dev` within about a minute; after `git rm` and a push, `platform-dev` (which has `prune: true`) will delete it from the cluster within about a minute.
