@@ -1613,3 +1613,11 @@ $ argocd account can-i sync applications 'dso202/tasktracker-dev'
 yes
 ```
 
+
+## Task 8
+
+Task 8 was done before Task 7. Task 7 needs the frontend and backend `1.1` images, which do not exist yet on Docker Hub (only `1.0` for my account and for the tutor's). Task 8 does not depend on Task 7: dev follows `main`, staging is still at `v1.0.0`, and none of the drills uses a 1.1 image.
+
+### Drill 1: drift in dev
+
+**Prediction (written and committed before the drill):** Because `tasktracker-dev` has `selfHeal: true`, Argo CD will notice the scaled Deployment within a few seconds and set it back to 1 replica, so the two extra backend Pods will be created and then terminated, and the Application will end `Synced` and `Healthy`.
