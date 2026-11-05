@@ -1614,6 +1614,10 @@ yes
 ```
 
 
+## Task 7
+
+Not done. Task 7 needs the frontend and backend images at tag `1.1`, and the backend 1.1 image contains a fault that must be diagnosed from its real logs. On Docker Hub only `1.0` exists, both for `sarojsanyasi/dso202-frontend` and `sarojsanyasi/dso202-backend` (arm64) and for my own `penguintandinzangmo/dso202-*` repositories. I did not build a fake 1.1, because the failure and its diagnosis would then not be real. Therefore there is no pull request list, no tags `v1.1.0` and `v1.2.0`, and staging stays at `v1.0.0`. Tasks 8 and 9 were done without it.
+
 ## Task 8
 
 Task 8 was done before Task 7. Task 7 needs the frontend and backend `1.1` images, which do not exist yet on Docker Hub (only `1.0` for my account and for the tutor's). Task 8 does not depend on Task 7: dev follows `main`, staging is still at `v1.0.0`, and none of the drills uses a 1.1 image.
