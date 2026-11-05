@@ -2012,3 +2012,49 @@ tasktracker-staging   Synced        Healthy
 ### Screenshots for drills 1 and 2
 
 Drills 1 and 2 were already restored before I took screenshots, so `task8-drill1-dev-reverted.png` and `task8-drill2-staging-restored.png` were taken afterwards, at 17:07. They show records that already existed: the drill 1 watch log, and the Kubernetes `ScalingReplicaSet` events (scaled from 1 to 3, then from 3 to 1) in each namespace.
+
+## Task 9
+
+Task 9 was also done before Task 7, for the same reason as Task 8 (no 1.1 images yet). Staging is therefore rebuilt at `v1.0.0`, the tag it had before the rebuild.
+
+### Before the rebuild (step 1)
+
+```text
+$ kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o name
+secret/sealed-secrets-keyqtzg5
+```
+
+```text
+$ umask 077; kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > ../dso202-keys/sealing-key.backup.yaml; chmod 600 ../dso202-keys/sealing-key.backup.yaml; ls -l ../dso202-keys/
+total 8
+-rw------- 1 tandinzangmo tandinzangmo 7087 Nov  5 19:04 sealing-key.backup.yaml
+```
+
+```text
+$ grep -c 'sealedsecrets.bitnami.com/sealed-secrets-key' ../dso202-keys/sealing-key.backup.yaml
+1
+```
+
+```text
+$ git rev-parse HEAD; git status --short | wc -l
+653149e6f4dea495c13ed8dfb65190a4873d58fc
+1
+```
+
+```text
+$ kubectl get applications -n argocd
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+```text
+$ argocd app get tasktracker-staging | grep -E 'Target|Sync Status'
+  Target:           v1.0.0
+Sync Status:        Synced to v1.0.0 (63d4c4f)
+```
+
