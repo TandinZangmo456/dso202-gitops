@@ -1814,3 +1814,59 @@ tasktracker-staging   Synced        Healthy
 ### Drill 3: removing a file prunes the object
 
 **Prediction (written and committed before the drill):** After I push Listing 16, the root will not deliver it but `platform-dev` will, so the `prune-drill` ConfigMap will appear in `dso202-dev` within about a minute; after `git rm` and a push, `platform-dev` (which has `prune: true`) will delete it from the cluster within about a minute.
+```text
+$ git log --oneline -1; date +%T
+daaa9ec Task 8 drill 3: add the prune-drill ConfigMap (Listing 16)
+16:56:05
+```
+
+```text
+$ kubectl get configmap prune-drill -n dso202-dev
+Error from server (NotFound): configmaps "prune-drill" not found
+[exit code 1]
+```
+
+```text
+$ date +%T; kubectl get configmap prune-drill -n dso202-dev -o jsonpath='{.metadata.name} {.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}'
+16:56:51
+prune-drill platform-dev:/ConfigMap:dso202-dev/prune-drill
+```
+
+```text
+$ argocd app get platform-dev | grep -E '^(Sync|Health) Status|prune-drill'
+Sync Status:        Synced to main (daaa9ec)
+Health Status:      Healthy
+                           ConfigMap      dso202-dev  prune-drill              Synced                  configmap/prune-drill created
+```
+
+```text
+$ git log --oneline -1 --stat; date +%T
+ddb7e40 Task 8 drill 3: remove the prune-drill ConfigMap from Git
+ platform/dev/prune-drill.yaml | 14 --------------
+ 1 file changed, 14 deletions(-)
+16:57:31
+```
+
+```text
+$ date +%T; kubectl get configmap prune-drill -n dso202-dev
+16:57:52
+Error from server (NotFound): configmaps "prune-drill" not found
+[exit code 1]
+```
+
+```text
+$ argocd app get platform-dev | grep -E '^(Sync|Health) Status|prune-drill'; kubectl get namespace dso202-dev
+Sync Status:        Synced to main (ddb7e40)
+Health Status:      Healthy
+                           ConfigMap      dso202-dev  prune-drill              Succeeded  Pruned         pruned
+NAME         STATUS   AGE
+dso202-dev   Active   15h
+```
+
+**Observation:** I pushed Listing 16 at 16:56:05 (commit daaa9ec). The `prune-drill` ConfigMap existed at 16:56:51, with the tracking id `platform-dev:/ConfigMap:dso202-dev/prune-drill`, so `platform-dev` delivered it. I removed it with `git rm` and pushed at 16:57:31 (commit ddb7e40). At 16:57:52 the ConfigMap was gone, and `argocd app get platform-dev` lists it as `Pruned`. The `dso202-dev` namespace and everything else in `platform-dev` stayed as before. Screenshots: `task8-drill3-configmap-added.png` and `task8-drill3-configmap-pruned.png`.
+
+**Did the prediction hold?** Yes. Both changes took under a minute because of the 60 second polling interval. `prune: true` in `platform-dev` means an object that disappears from Git is deleted from the cluster, so Git is the full description, not just a list of things to create. The namespace manifest (Listing 11) carries `argocd.argoproj.io/sync-options: Prune=false`. If `namespace.yaml` were deleted from Git, Argo CD would leave the namespace in place and only show it as needing pruning. Deleting a namespace would delete every object in it, including the database volume, so that protection is on purpose. I did not test it, as the brief says.
+
+### Drill 4: the project rejects a kind it does not permit
+
+**Prediction (written and committed before the drill):** After I push Listing 17, `tasktracker-dev` will turn `OutOfSync` and its automated sync will fail with a message saying that `ResourceQuota` is not permitted in project `dso202`, while the running Pods stay `Healthy`; staging will stay `Synced` because it renders the chart from tag `v1.0.0`, which does not contain the new file.
