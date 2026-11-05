@@ -164,3 +164,15 @@ In drill 4 I added a ResourceQuota to the chart. The sync was refused with "reso
 ![Figure 9: drill 4, the ResourceQuota refused by the dso202 project](screenshots/task8-drill4-quota-rejected.png)
 
 *Figure 9: drill 4, the ResourceQuota refused by the dso202 project*
+
+### Task 9: Rebuild from Git
+
+I also did Task 9 before Task 7, so staging was rebuilt at `v1.0.0`. First I backed up the sealing key again and recorded the commit and the state of all Applications. Then I deleted the cluster and created a new one from `cluster/kind-cluster.yaml`. Before anything else I created the `sealed-secrets` namespace and applied the key backup, so the controller would find the old key and not make a new one. Then I applied the two bootstrap folders and nothing else.
+
+This took much longer than I expected, and the delay was not caused by GitOps. The new nodes had to download every image again, and the downloads were very slow. The Argo CD image took 13 minutes on one node. On worker-node-2 the Redis download hung completely, and because the kubelet pulls one image at a time, it blocked Dex and later the Sealed Secrets controller too. My laptop could pull the same images in under a minute. So I pulled them on the laptop, copied them into the nodes with `kind load`, recreated the stuck Pods, and in the end restarted the kubelet on worker-node-2. None of these steps created or changed a Kubernetes object from my repository.
+
+Once the images were there, things went fast. The controller logged that it registered the restored key `sealed-secrets-keyqtzg5` and unsealed both environments, and no "no key could decrypt" error appeared. The Applications became `Synced` and `Healthy` in wave order: sealed-secrets at 19:51:32, the two platform Applications at 19:51:37 and 19:51:39, the root at 19:51:40 and `tasktracker-dev` at 19:52:04. I signed in with the new initial admin password and synced staging, which was healthy at 19:53:01 on `v1.0.0`. Both frontends answered, both smoke tests passed, and I created one task in each environment. The old tasks were gone, as expected, because database data is not in Git. In total it took about 49 minutes from `kind create cluster` to a working dev frontend, almost all of it waiting for images. Finally I backed up the key again from the rebuilt cluster.
+
+![Figure 10: the rebuilt cluster with all six Applications Synced and Healthy](screenshots/task9-rebuilt-environment.png)
+
+*Figure 10: the rebuilt cluster with all six Applications Synced and Healthy*

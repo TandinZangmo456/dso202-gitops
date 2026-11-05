@@ -2058,3 +2058,473 @@ $ argocd app get tasktracker-staging | grep -E 'Target|Sync Status'
 Sync Status:        Synced to v1.0.0 (63d4c4f)
 ```
 
+### Delete and recreate the cluster (step 2)
+
+```text
+$ date
+Thu Nov  5 07:04:52 PM +06 2026
+```
+
+```text
+$ kind delete cluster --name dso202-gitops
+Deleting cluster "dso202-gitops" ...
+Deleted nodes: ["dso202-gitops-worker2" "dso202-gitops-control-plane" "dso202-gitops-worker"]
+```
+
+```text
+$ date +%T; kind create cluster --name dso202-gitops --config cluster/kind-cluster.yaml; date +%T
+19:04:56
+Creating cluster "dso202-gitops" ...
+ • Ensuring node image (kindest/node:v1.36.1) 🖼  ...
+ ✓ Ensuring node image (kindest/node:v1.36.1) 🖼
+ • Preparing nodes 📦 📦 📦   ...
+ ✓ Preparing nodes 📦 📦 📦 
+ • Writing configuration 📜  ...
+ ✓ Writing configuration 📜
+ • Starting control-plane 🕹️  ...
+ ✓ Starting control-plane 🕹️
+ • Installing CNI 🔌  ...
+ ✓ Installing CNI 🔌
+ • Installing StorageClass 💾  ...
+ ✓ Installing StorageClass 💾
+ • Joining worker nodes 🚜  ...
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-dso202-gitops"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-dso202-gitops
+
+Not sure what to do next? 😅  Check out https://kind.sigs.k8s.io/docs/user/quick-start/
+19:05:21
+```
+
+```text
+$ kubectl get nodes
+NAME            STATUS     ROLES           AGE   VERSION
+control-plane   NotReady   control-plane   15s   v1.36.1
+worker-node-1   NotReady   <none>          0s    v1.36.1
+worker-node-2   NotReady   <none>          1s    v1.36.1
+```
+
+### Restore the sealing key (step 3)
+
+```text
+$ kubectl create namespace sealed-secrets
+namespace/sealed-secrets created
+```
+
+```text
+$ kubectl apply -f ../dso202-keys/sealing-key.backup.yaml
+secret/sealed-secrets-keyqtzg5 created
+```
+
+```text
+$ kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o name
+secret/sealed-secrets-keyqtzg5
+```
+
+### Bootstrap again (step 4)
+
+```text
+$ date +%T; kubectl apply -k bootstrap/argocd --server-side --force-conflicts | tail -3; kubectl get crd | grep argoproj
+19:05:41
+networkpolicy.networking.k8s.io/argocd-redis-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-repo-server-network-policy serverside-applied
+networkpolicy.networking.k8s.io/argocd-server-network-policy serverside-applied
+applications.argoproj.io      2026-11-05T13:05:43Z
+applicationsets.argoproj.io   2026-11-05T13:05:44Z
+appprojects.argoproj.io       2026-11-05T13:05:44Z
+```
+
+```text
+$ date +%T; kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s; date +%T
+19:05:45
+timed out waiting for the condition on deployments/argocd-applicationset-controller
+timed out waiting for the condition on deployments/argocd-dex-server
+timed out waiting for the condition on deployments/argocd-notifications-controller
+timed out waiting for the condition on deployments/argocd-redis
+timed out waiting for the condition on deployments/argocd-repo-server
+timed out waiting for the condition on deployments/argocd-server
+19:10:45
+```
+
+```text
+$ kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s
+Waiting for 1 pods to be ready...
+error: timed out waiting for the condition
+[exit code 1]
+```
+
+
+The first wait timed out after 5 minutes. The new nodes had to pull every image again, and one pull of the Argo CD image was cut off by a network error:
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS              RESTARTS   AGE
+argocd-application-controller-0                     0/1     ContainerCreating   0          10m
+argocd-applicationset-controller-58bb5c7479-x2p7k   0/1     ImagePullBackOff    0          10m
+argocd-dex-server-dd6b85d9c-j9rrc                   0/1     PodInitializing     0          10m
+argocd-notifications-controller-6b85c65458-26k9f    0/1     ContainerCreating   0          10m
+argocd-redis-869b85489d-g2tj6                       0/1     PodInitializing     0          10m
+argocd-repo-server-5bf66565cd-dlxcb                 0/1     Init:0/1            0          10m
+argocd-server-7474bb8f76-26htg                      1/1     Running             0          10m
+```
+
+```text
+$ kubectl get events -n argocd --field-selector reason=Failed -o custom-columns=OBJECT:.involvedObject.name,MESSAGE:.message | cut -c1-200
+OBJECT                                              MESSAGE
+argocd-applicationset-controller-58bb5c7479-x2p7k   Failed to pull image "quay.io/argoproj/argocd:v3.5.6": failed to pull and unpack image "quay.io/argoproj/argocd:v3.5.6": failed to copy: read tcp 17
+argocd-applicationset-controller-58bb5c7479-x2p7k   Error: ErrImagePull
+argocd-applicationset-controller-58bb5c7479-x2p7k   Error: ImagePullBackOff
+```
+
+The kubelet retries pulls by itself, so I changed nothing and ran the same waits again:
+
+```text
+$ date +%T; kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s; date +%T
+19:16:03
+deployment.apps/argocd-applicationset-controller condition met
+timed out waiting for the condition on deployments/argocd-dex-server
+timed out waiting for the condition on deployments/argocd-notifications-controller
+timed out waiting for the condition on deployments/argocd-redis
+timed out waiting for the condition on deployments/argocd-repo-server
+timed out waiting for the condition on deployments/argocd-server
+19:21:03
+```
+
+
+The second wait timed out too, but by then the Argo CD image had arrived on worker-node-1 (the event says it took 13m6.99s including waiting). Redis and Dex were still pulling on worker-node-2. A third wait:
+
+```text
+$ date +%T; kubectl wait --for=condition=Available deployment --all -n argocd --timeout=420s; date +%T
+19:21:19
+deployment.apps/argocd-applicationset-controller condition met
+timed out waiting for the condition on deployments/argocd-dex-server
+timed out waiting for the condition on deployments/argocd-notifications-controller
+timed out waiting for the condition on deployments/argocd-redis
+timed out waiting for the condition on deployments/argocd-repo-server
+timed out waiting for the condition on deployments/argocd-server
+19:28:19
+```
+
+```text
+$ kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s
+partitioned roll out complete: 1 new pods have been updated...
+```
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS            RESTARTS   AGE
+argocd-application-controller-0                     1/1     Running           0          22m
+argocd-applicationset-controller-58bb5c7479-x2p7k   1/1     Running           0          22m
+argocd-dex-server-dd6b85d9c-j9rrc                   0/1     PodInitializing   0          22m
+argocd-notifications-controller-6b85c65458-26k9f    1/1     Running           0          22m
+argocd-redis-869b85489d-g2tj6                       0/1     PodInitializing   0          22m
+argocd-repo-server-5bf66565cd-dlxcb                 1/1     Running           0          22m
+argocd-server-7474bb8f76-26htg                      1/1     Running           0          22m
+```
+
+
+The Redis and Dex Pods on worker-node-2 stayed in `PodInitializing`. The node had been pulling `public.ecr.aws/docker/library/redis:8.2.3-alpine` for 18 minutes without finishing, while `docker pull` of the same image on my laptop took 36 seconds. So the pull inside the node was stuck. As a workaround I copied the image from my laptop into the node image cache with `kind load`. This only adds an image to the nodes; it does not create or change any Kubernetes object:
+
+```text
+$ kind load docker-image public.ecr.aws/docker/library/redis:8.2.3-alpine --name dso202-gitops 2>&1 | tail -3
+Image: "public.ecr.aws/docker/library/redis:8.2.3-alpine" with ID "sha256:f508abec2c47b3b5099daf9e7b11ead2a9396c17ca46654f2f9723c14892e3da" not yet present on node "dso202-gitops-worker", loading...
+Image: "public.ecr.aws/docker/library/redis:8.2.3-alpine" with ID "sha256:f508abec2c47b3b5099daf9e7b11ead2a9396c17ca46654f2f9723c14892e3da" not yet present on node "dso202-gitops-worker2", loading...
+Image: "public.ecr.aws/docker/library/redis:8.2.3-alpine" with ID "sha256:f508abec2c47b3b5099daf9e7b11ead2a9396c17ca46654f2f9723c14892e3da" not yet present on node "dso202-gitops-control-plane", loading...
+```
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS            RESTARTS   AGE
+argocd-application-controller-0                     1/1     Running           0          24m
+argocd-applicationset-controller-58bb5c7479-x2p7k   1/1     Running           0          24m
+argocd-dex-server-dd6b85d9c-j9rrc                   0/1     PodInitializing   0          24m
+argocd-notifications-controller-6b85c65458-26k9f    1/1     Running           0          24m
+argocd-redis-869b85489d-g2tj6                       0/1     PodInitializing   0          24m
+argocd-repo-server-5bf66565cd-dlxcb                 1/1     Running           0          24m
+argocd-server-7474bb8f76-26htg                      1/1     Running           0          24m
+```
+
+
+Dex on worker-node-2 was stuck the same way, on `ghcr.io/dexidp/dex:v2.45.1`. I pulled it on my laptop and loaded it too. The kubelet was still waiting on its hung pulls, so I deleted the two stuck Pods. Their Deployments create identical new Pods, which find the images already on the node:
+
+```text
+$ kind load docker-image ghcr.io/dexidp/dex:v2.45.1 --name dso202-gitops 2>&1 | tail -1
+ERROR: image: "ghcr.io/dexidp/dex:v2.45.1" not present locally
+```
+
+
+The pull of Dex on my laptop also timed out after 3 minutes, so that `kind load` failed ("not present locally"). The new Redis Pod started from the loaded image. Dex is only used for SSO, and I sign in with the local admin account, so I went on without waiting for it:
+
+```text
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS        RESTARTS   AGE
+argocd-application-controller-0                     1/1     Running       0          35m
+argocd-applicationset-controller-58bb5c7479-x2p7k   1/1     Running       0          35m
+argocd-dex-server-dd6b85d9c-8dllt                   0/1     Init:0/1      0          7m33s
+argocd-dex-server-dd6b85d9c-j9rrc                   0/1     Terminating   0          35m
+argocd-notifications-controller-6b85c65458-26k9f    1/1     Running       0          35m
+argocd-redis-869b85489d-g2tj6                       0/1     Terminating   0          35m
+argocd-redis-869b85489d-pgp9f                       1/1     Running       0          7m33s
+argocd-repo-server-5bf66565cd-dlxcb                 1/1     Running       0          35m
+argocd-server-7474bb8f76-26htg                      1/1     Running       0          35m
+```
+
+### Root Application (step 4) and wave order (step 5)
+
+I started a timestamped `kubectl get applications -n argocd -w` before applying the root.
+
+```text
+$ date +%T; kubectl apply -f bootstrap/root
+19:41:24
+appproject.argoproj.io/platform created
+Warning: metadata.finalizers: "resources-finalizer.argocd.argoproj.io": prefer a domain-qualified finalizer name including a path (/) to avoid accidental conflicts with other finalizer writers
+application.argoproj.io/root created
+```
+
+
+The Sealed Secrets controller Pod was also stuck pulling its image on worker-node-2. To save time I loaded every image the rest of the rebuild needs from my laptop into the nodes, the same way as Redis (no Kubernetes object is created by this):
+
+```text
+$ kind load docker-image docker.io/bitnami/sealed-secrets-controller:0.40.0 busybox:1.37 penguintandinzangmo/dso202-db:1.0 penguintandinzangmo/dso202-backend:1.0 penguintandinzangmo/dso202-frontend:1.0 --name dso202-gitops 2>&1 | grep -c loading
+15
+```
+
+```text
+$ kubectl delete pod -n sealed-secrets -l app.kubernetes.io/name=sealed-secrets --wait=false
+pod "sealed-secrets-controller-8b5ffdf69-8vp4l" deleted from sealed-secrets namespace
+```
+
+
+The new controller Pod again showed `Pulling`, although the image was now on worker-node-2 and the pull policy is `IfNotPresent`. The kubelet pulls images one at a time by default, and the hung Dex pull on that node was blocking the queue. I restarted the kubelet on worker-node-2:
+
+```text
+$ docker exec dso202-gitops-worker2 crictl images | grep -cE 'sealed-secrets|dso202|busybox|redis'
+6
+```
+
+```text
+$ docker exec dso202-gitops-worker2 systemctl restart kubelet && echo restarted
+restarted
+```
+
+```text
+$ kubectl get pods -n sealed-secrets; kubectl get pods -n argocd | grep -E 'dex|redis'
+NAME                                        READY   STATUS    RESTARTS   AGE
+sealed-secrets-controller-8b5ffdf69-hgjp2   1/1     Running   0          78s
+argocd-dex-server-dd6b85d9c-8dllt                   1/1     Running   0          18m
+argocd-redis-869b85489d-pgp9f                       1/1     Running   0          18m
+```
+
+```text
+$ date +%T; kubectl get applications -n argocd
+19:52:05
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   OutOfSync     Missing
+```
+
+```text
+$ kubectl get secret tasktracker-credentials -n dso202-dev -o jsonpath='{range .data}{end}{.metadata.name} keys: {.data}' | sed 's/:"[^"]*"/:<hidden>/g'
+tasktracker-credentials keys: {"DB_PASSWORD":<hidden>,"DB_USER":<hidden>,"POSTGRES_PASSWORD":<hidden>,"POSTGRES_USER":<hidden>}
+```
+
+```text
+$ kubectl logs -n sealed-secrets -l app.kubernetes.io/name=sealed-secrets | grep -iE 'key|unseal' | grep -v -i 'error' | head -5
+time=2026-11-05T13:51:32.343Z level=INFO msg="Searching for existing private keys"
+time=2026-11-05T13:51:32.352Z level=INFO msg="registered private key" secretname=sealed-secrets-keyqtzg5
+time=2026-11-05T13:51:37.144Z level=INFO msg=Updating key=dso202-staging/tasktracker-credentials
+time=2026-11-05T13:51:37.180Z level=INFO msg="Event(v1.ObjectReference{Kind:\"SealedSecret\", Namespace:\"dso202-staging\", Name:\"tasktracker-credentials\", UID:\"d9a11166-2570-44f0-8fec-5ea99b80d7c6\", APIVersion:\"bitnami.com/v1alpha1\", ResourceVersion:\"5547\", FieldPath:\"\"}): type: 'Normal' reason: 'Unsealed' SealedSecret unsealed successfully"
+time=2026-11-05T13:51:39.718Z level=INFO msg=Updating key=dso202-dev/tasktracker-credentials
+```
+
+```text
+$ kubectl logs -n sealed-secrets -l app.kubernetes.io/name=sealed-secrets | grep -ci 'no key could decrypt'
+0
+[exit code 1]
+```
+
+`grep -c` exits with code 1 when it counts 0 lines, so the exit code above means the error never appeared.
+
+### Sign in and sync staging (step 6)
+
+I started the Argo CD port-forward again and signed in as admin in my own terminal with the new initial password (`argocd admin initial-password -n argocd`, then `argocd login localhost:8080 --username admin --insecure`). The password is not recorded here.
+
+```text
+$ argocd account get-user-info
+{"level":"fatal","msg":"Failed to establish connection to localhost:8080: error dial proxy: dial tcp [::1]:8080: connect: connection refused","time":"2026-11-05T19:52:14+06:00"}
+[exit code 1]
+```
+
+```text
+$ argocd app sync tasktracker-staging --timeout 400 | sed -n '/^Sync Status/,/^Message/p'
+{"level":"fatal","msg":"Failed to establish connection to localhost:8080: error dial proxy: dial tcp [::1]:8080: connect: connection refused","time":"2026-11-05T19:52:14+06:00"}
+```
+
+```text
+$ date +%T; kubectl get applications -n argocd
+19:52:14
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   OutOfSync     Missing
+```
+
+Both commands failed because the port-forward had died ("lost connection to pod") when I restarted the kubelet on worker-node-2. I started it again and repeated them:
+
+```text
+$ argocd account get-user-info
+Logged In: true
+Username: admin
+Issuer: argocd
+Groups: 
+```
+
+```text
+$ argocd app sync tasktracker-staging --timeout 400 | sed -n '/^Sync Status/,/^Message/p'
+Sync Status:        Synced to v1.0.0 (63d4c4f)
+Health Status:      Healthy
+
+Operation:          Sync
+Sync Revision:      63d4c4fc60e88718839cd052a8878b9edb4eaf9c
+Phase:              Succeeded
+Start:              2026-11-05 19:52:38 +0600 +06
+Finished:           2026-11-05 19:53:06 +0600 +06
+Duration:           28s
+Message:            successfully synced (no more tasks)
+```
+
+```text
+$ date +%T; kubectl get applications -n argocd
+19:53:12
+NAME                  SYNC STATUS   HEALTH STATUS
+platform-dev          Synced        Healthy
+platform-staging      Synced        Healthy
+root                  Synced        Healthy
+sealed-secrets        Synced        Healthy
+tasktracker-dev       Synced        Healthy
+tasktracker-staging   Synced        Healthy
+```
+
+
+### Wave order after the rebuild (step 5)
+
+From the timestamped watch started before the root was applied, the first line in which each Application was `Healthy`:
+
+```text
+$ for a in root sealed-secrets platform-dev platform-staging tasktracker-dev tasktracker-staging; do grep " $a " ../watch-logs/rebuild-apps-watch.log | grep -m1 'Healthy'; done | sort
+19:42:25 root   Unknown       Healthy
+19:51:32 sealed-secrets   Synced        Healthy
+19:51:36 platform-staging   OutOfSync     Healthy
+19:51:39 platform-dev       OutOfSync     Healthy
+19:51:40 tasktracker-dev       OutOfSync     Healthy
+19:52:38 tasktracker-staging   OutOfSync     Healthy
+```
+
+And the first line in which each one was both `Synced` and `Healthy`:
+
+```text
+$ for a in sealed-secrets platform-dev platform-staging tasktracker-dev tasktracker-staging root; do grep " $a " ../watch-logs/rebuild-apps-watch.log | grep -m1 'Synced *Healthy'; done | sort
+19:51:32 sealed-secrets   Synced        Healthy
+19:51:37 platform-staging   Synced        Healthy
+19:51:39 platform-dev          Synced        Healthy
+19:51:40 root                  Synced        Healthy
+19:52:04 tasktracker-dev       Synced        Healthy
+19:53:01 tasktracker-staging   Synced        Healthy
+```
+
+
+### Verify both environments (step 7)
+
+```text
+$ date +%T; curl -s -o /dev/null -w 'dev frontend HTTP %{http_code}\n' http://localhost:30080/
+19:54:01
+dev frontend HTTP 200
+```
+
+```text
+$ kubectl logs job/tasktracker-smoke-test -n dso202-dev | cut -c1-120
+[{"id":1,"title":"Set up kind cluster","description":"Bring up the local cluster from Practical 1","status":"done","crea
+```
+
+```text
+$ kubectl logs job/tasktracker-smoke-test -n dso202-staging | cut -c1-120
+[{"id":1,"title":"Set up kind cluster","description":"Bring up the local cluster from Practical 1","status":"done","crea
+```
+
+Port-forwards in the background: staging frontend on 8081, dev backend on 18080, staging backend on 18081.
+
+```text
+$ curl -s -o /dev/null -w 'staging frontend HTTP %{http_code}\n' http://localhost:8081/
+staging frontend HTTP 200
+```
+
+```text
+$ curl -s -X POST -H 'Content-Type: application/json' -d '{"title":"Created after rebuild (dev)","description":"Task 9 check"}' http://localhost:18080/api/tasks
+{"id":4,"title":"Created after rebuild (dev)","description":"Task 9 check","status":"pending","created_at":"2026-11-05T13:54:13.243Z"}
+```
+
+```text
+$ curl -s -X POST -H 'Content-Type: application/json' -d '{"title":"Created after rebuild (staging)","description":"Task 9 check"}' http://localhost:18081/api/tasks
+{"id":4,"title":"Created after rebuild (staging)","description":"Task 9 check","status":"pending","created_at":"2026-11-05T13:54:13.276Z"}
+```
+
+```text
+$ curl -s http://localhost:18080/api/tasks | grep -o '"title":"[^"]*"'; echo ---; curl -s http://localhost:18081/api/tasks | grep -o '"title":"[^"]*"'
+"title":"Set up kind cluster"
+"title":"Write namespace manifest"
+"title":"Wire ConfigMap and Secret"
+"title":"Created after rebuild (dev)"
+---
+"title":"Set up kind cluster"
+"title":"Write namespace manifest"
+"title":"Wire ConfigMap and Secret"
+"title":"Created after rebuild (staging)"
+```
+
+
+### Fresh key backup from the rebuilt cluster (step 8)
+
+```text
+$ kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o name
+secret/sealed-secrets-keyqtzg5
+```
+
+```text
+$ umask 077; kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > ../dso202-keys/sealing-key.backup.yaml; chmod 600 ../dso202-keys/sealing-key.backup.yaml; ls -l ../dso202-keys/
+total 16
+-rw------- 1 tandinzangmo tandinzangmo 14199 Nov  5 19:54 sealing-key.backup.yaml
+```
+
+### Elapsed time
+
+```text
+$ date
+Thu Nov  5 07:54:27 PM +06 2026
+```
+
+| Moment | Time |
+| --- | --- |
+| `kind delete cluster` started | 19:04:52 |
+| `kind create cluster` started | 19:04:56 |
+| Cluster created | 19:05:21 |
+| Root applied | 19:41:24 |
+| `tasktracker-dev` Synced and Healthy | 19:52:04 |
+| Dev frontend answered HTTP 200 | 19:54:01 |
+| `tasktracker-staging` Synced and Healthy after the manual sync | 19:53:01 |
+
+From `kind create cluster` to a working dev frontend took about 49 minutes (19:04:56 to 19:54:01). Most of it was waiting for images. Pulls inside the new nodes were very slow, and on worker-node-2 one hung pull blocked all the others until I loaded the images from my laptop and restarted the kubelet there. Once the images were on the nodes, everything from the Sealed Secrets controller starting (19:51:32) to dev Healthy (19:52:04) took about half a minute. The database data was lost as expected: each environment only has the three seeded tasks plus the one I created after the rebuild. Staging is at `v1.0.0`, the same tag as before. `git rev-parse HEAD` before the rebuild was 653149e, and nothing in Git was changed to rebuild.
+
+Note on the Redis and Dex Pods: my `kubectl delete pod` for them was cut off before its output was recorded, because the command waited for the old Pods to finish terminating. The `kubectl get pods -n argocd` output above shows its effect: the old Pods `Terminating` and new ones (`argocd-redis-869b85489d-pgp9f`, `argocd-dex-server-dd6b85d9c-8dllt`) created.
+
+The new backup is larger than the first one (14199 bytes against 7087), but it still holds the single key `sealed-secrets-keyqtzg5`. The size grew because the key was re-created with `kubectl apply`, which adds an annotation with the whole object. I did not open the file.
+
+Screenshot of the rebuilt cluster: `task9-rebuilt-environment.png`.

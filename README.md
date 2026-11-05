@@ -141,3 +141,46 @@ for example a role `role:dso202-reviewer` with the same three `p,` lines, and a
 line `g, <idp-group-name>, role:dso202-reviewer`. People would get or lose
 access by joining or leaving the group, and the local `reviewer` account could
 be removed.
+
+### Q6. (a) One repository for chart and configuration: two advantages and two disadvantages. (b) What is not under GitOps control after the rebuild?
+
+(a) Advantages for this project:
+
+1. One commit can change the chart and the values that use it together. In
+   Task 5 the smoke-test Job and the dev values went out as one reviewed
+   change, and a tag like `v1.0.0` pins both at once, so staging can never get
+   a chart that does not match its values.
+2. It is simple. One repository, one URL in every Application, one place to
+   read the history. For one student and two environments, a second repository
+   would only add more credentials and more places to keep in step.
+
+Disadvantages:
+
+1. Every commit to `main`, even a change to `docs/evidence.md`, is a new
+   revision for `tasktracker-dev`, `root` and the platform Applications. Argo CD
+   has to render the chart again, and the history fills with commits that have
+   nothing to do with the cluster.
+2. Access cannot be split. Anyone who may change the chart may also change the
+   staging pin, the AppProjects and the platform layer. In a real team the
+   people who write the app and the people who approve environment changes
+   would usually be different, and separate repositories make that easy.
+
+(b) Not under GitOps control after the rebuild:
+
+- **The bootstrap layer** (Argo CD itself, `argocd-cm`, `argocd-rbac-cm`). I
+  applied it by hand with `kubectl apply -k`, and in Task 6 a commit to it
+  changed nothing until I applied it again. Teams usually let Argo CD manage its
+  own installation with an Application after the first install, or install it
+  with Terraform or a cluster provisioning tool.
+- **The root Application and the `platform` project.** They are in Git but
+  applied by hand, and nothing re-applies them if they change. Teams usually
+  apply them from the same automated pipeline that creates the cluster.
+- **The sealing key.** It lives only in the cluster and in my backup file
+  outside Git. Teams usually keep it in a secrets manager or vault, or replace
+  Sealed Secrets with an operator that reads secrets from an external store.
+- **The database contents.** They were lost in the rebuild, and only the seed
+  data came back. Teams usually use scheduled database backups or volume
+  snapshots, with regular restore tests.
+- **The cluster itself and my laptop setup** (kind, the inotify limit, the
+  images I had to load into the nodes). Teams usually describe clusters with
+  infrastructure as code, so they can be recreated the same way.
