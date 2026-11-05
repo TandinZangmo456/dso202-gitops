@@ -1,8 +1,8 @@
 # DSO202 Assignment 4, GitOps Delivery of the Task Tracker with Argo CD
 
-**Tandin Zangmo**
-**Student number:** 02230305
-**Submission date:** [submission date]
+**Tandin Zangmo**  
+**Student number:** 02230305  
+**Submission date:** 5 November 2026
 
 ---
 
@@ -34,7 +34,7 @@ Only two things are applied by hand. `bootstrap/argocd` installs Argo CD from th
 
 Inside the chart there are more waves: database 0, backend 1, frontend 2, and then the PostSync smoke-test Job.
 
-There are two projects. `platform` is the administrator project and may deploy any kind into `argocd`, `sealed-secrets` and the two app namespaces. `dso202` is the workload project. It may only deploy into `dso202-dev` and `dso202-staging`, may not create any cluster-scoped kind, and may only create the five kinds my chart renders: Deployment, Service, ConfigMap, PersistentVolumeClaim and Job.
+There are two projects. `platform` is the administrator project and may deploy any kind into `argocd`, `sealed-secrets` and the two app namespaces. `dso202` is the workload project. It may only deploy into `dso202-dev` and `dso202-staging`, may not create any cluster-scoped kind, and may only create the five kinds my chart renders (Deployment, Service, ConfigMap, PersistentVolumeClaim and Job), plus ReplicaSet and Pod, which I added in Task 6 so that Argo CD shows the Pods.
 
 The two environments use the same chart. They differ only in their values file and in the Git revision they follow:
 
@@ -141,6 +141,10 @@ The log viewer was still blank. The server log showed that following a log faile
 
 *Figure 6: reviewer session showing the backend Pod logs*
 
+### Task 7: A release, a faulty release, and recovery (not done)
+
+I could not do Task 7. It needs version `1.1` of the frontend and backend images, and the backend 1.1 image has a fault that has to be diagnosed from its real logs. Only `1.0` exists, both in the tutor's Docker Hub account and in mine, and I have no 1.1 source code to build from. I decided not to make my own fake 1.1 release, because then the failure and its diagnosis would not be real. For the same reason the tags `v1.1.0` and `v1.2.0` do not exist, and staging stays on `v1.0.0`. I wrote the answer to Q5 in the README from the documentation only. Tasks 8 and 9 do not depend on Task 7, so I did them first.
+
 ### Task 8: Drift, pruning and project guardrails
 
 I did Task 8 before Task 7, because Task 7 needs 1.1 images that are not available yet, and none of the drills depends on them. For each drill I wrote the prediction in the evidence file and committed it before running anything. All four predictions held.
@@ -176,3 +180,24 @@ Once the images were there, things went fast. The controller logged that it regi
 ![Figure 10: the rebuilt cluster with all six Applications Synced and Healthy](screenshots/task9-rebuilt-environment.png)
 
 *Figure 10: the rebuilt cluster with all six Applications Synced and Healthy*
+
+## 4. Problems and fixes
+
+| Problem | Cause | What I did |
+| --- | --- | --- |
+| Not enough memory for the cluster | Docker Desktop gave its VM only 1.7 GiB, and my laptop has 7.1 GiB in total | Used the native Docker Engine, stopped Docker Desktop, and closed Chrome, VS Code and Elasticsearch when memory ran out |
+| Argo CD Pods failed to start | The disk was full ("no space left on device") | Removed old Docker images and caches from other courses, about 17 GB |
+| First staging sync failed | Low memory restarted `argocd-server`, which killed my port-forward | Freed memory, restarted the port-forward, synced again |
+| Images were arm64 only | The tutor's images are built for arm64 and my laptop is amd64 | Used my own amd64 rebuilds, approved by the tutor |
+| Plaintext env files were never saved | Editing through the chat did not save the files | Generated random values with a script that never prints them |
+| I wrote the DB user names into the evidence | A user name is a credential value too | Removed them before committing, then checked every file and commit |
+| Reviewer could not see Pod logs | The exact project whitelist hides ReplicaSets and Pods from the tree | Added `apps/ReplicaSet` and `Pod` to the `dso202` project, with a comment |
+| Log viewer stayed blank | Only 128 inotify instances per user, so following a log failed | Switched off Follow in the log viewer |
+| Rebuild was slow and got stuck | Image pulls in the new nodes were slow, and one hung pull blocked the rest | Loaded the images from my laptop with `kind load` and restarted the kubelet on that node |
+| No 1.1 images | They were never published | Left Task 7 undone instead of faking it |
+
+## 5. Conclusion
+
+At the end, my cluster is described almost completely by one Git repository. Two folders are applied by hand. Everything else, from the projects and the Sealed Secrets controller to both Task Tracker environments, is created by the root Application. I saw the main GitOps ideas work in practice. Dev followed `main` by itself and healed itself within a second. Staging only changed when I moved it by hand, and it reported drift without fixing it. A file removed from Git was pruned. The project refused a kind it does not allow. The whole cluster came back from Git plus one key backup, with the old sealed credentials still working.
+
+I also learned where GitOps stops. The bootstrap layer, the sealing key and the database data are not in Git, and my RBAC change in Task 6 only worked after I applied it by hand. Most of my time did not go into Argo CD itself. It went into the limits of my laptop: memory, disk, image downloads and file watchers. The part I could not finish is Task 7, because the 1.1 images it depends on were not available.

@@ -39,8 +39,76 @@ Database credentials are stored here only as SealedSecrets.
 | `environments/<env>/values.yaml` | everything that differs between dev and staging |
 | `docs/` | `evidence.md` (command output per task), `report.md`, screenshots |
 
-(Bootstrap commands, cleanup, credential handling and the answers to Q1 to Q6
-are added as the tasks are done.)
+## Building everything from an empty machine
+
+This is the sequence I used in Task 9. It needs Docker, kind, kubectl and the
+`argocd` CLI at the versions above, this repository cloned, and the sealing key
+backup in `../dso202-keys/` next to it.
+
+```bash
+# 1. Cluster (Practical 1 configuration, 3 nodes, host port 30080)
+kind create cluster --name dso202-gitops --config cluster/kind-cluster.yaml
+
+# 2. Put the old sealing key back BEFORE the controller exists
+kubectl create namespace sealed-secrets
+kubectl apply -f ../dso202-keys/sealing-key.backup.yaml
+
+# 3. Argo CD (the only manifests applied by hand, besides step 5)
+kubectl apply -k bootstrap/argocd --server-side --force-conflicts
+kubectl wait --for=condition=Available deployment --all -n argocd --timeout=300s
+kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s
+
+# 4. Sign in (in your own terminal, the password is never written down)
+kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+argocd admin initial-password -n argocd
+argocd login localhost:8080 --username admin --insecure
+
+# 5. The platform project and the root Application; the root creates the rest
+kubectl apply -f bootstrap/root
+kubectl get applications -n argocd -w
+
+# 6. Staging has no automated sync, so it is synced once by a person
+argocd app sync tasktracker-staging
+
+# 7. Back up the key again from the new cluster
+kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > ../dso202-keys/sealing-key.backup.yaml
+chmod 600 ../dso202-keys/sealing-key.backup.yaml
+```
+
+Dev is then at `http://localhost:30080`. Staging is reached with
+`kubectl port-forward svc/tasktracker-frontend -n dso202-staging 8081:8080`.
+
+On a fresh cluster the first image pulls can be very slow. In Task 9 one hung
+pull on a worker blocked the others. Pulling the image on the laptop and
+loading it with `kind load docker-image <image> --name dso202-gitops` fixed it.
+On a fresh first install (no key backup yet), skip step 2 and run step 7 as
+soon as the Sealed Secrets controller is running.
+
+## Cleanup
+
+```bash
+# Back up the key first if the cluster will be needed again
+kubectl get secret -n sealed-secrets -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > ../dso202-keys/sealing-key.backup.yaml
+kind delete cluster --name dso202-gitops
+```
+
+Deleting the cluster removes everything, including the database data. Git and
+the key backup are all that is needed to build it again.
+
+## How credentials are handled
+
+- The database credentials are in Git only as SealedSecrets
+  (`platform/<env>/tasktracker-credentials.sealed.yaml`), sealed separately for
+  dev and staging with strict scope. Only the controller in the cluster can
+  decrypt them.
+- The plaintext input files live in `secrets-plain/`, which is in
+  `.gitignore` and was never committed. They were made with random values
+  that were never printed. A search of the whole Git history for every value
+  found nothing (Task 4).
+- The sealing key backup is kept outside the repository in
+  `../dso202-keys/` with mode 600, and it is never opened or shown.
+- The Argo CD admin and reviewer passwords were typed only in my own terminal
+  and are not written anywhere in this repository.
 
 ## Written answers
 
@@ -141,6 +209,24 @@ for example a role `role:dso202-reviewer` with the same three `p,` lines, and a
 line `g, <idp-group-name>, role:dso202-reviewer`. People would get or lose
 access by joining or leaving the group, and the local `reviewer` account could
 be removed.
+
+### Q5. Why is `argocd app rollback` refused, what is the GitOps equivalent, and why is `git revert` better than deleting the bad commit?
+
+I could not do Task 7, because the frontend and backend `1.1` images were not
+available, so this answer is not based on my own output.
+
+`tasktracker-dev` has automated sync. If Argo CD rolled it back to an older
+revision, the automated sync would compare the cluster with `main` again and
+re-apply the bad commit straight away, so the Argo CD documentation says that
+rollback cannot be done on an Application with automated sync. The equivalent
+in GitOps is a new commit that undoes the bad one, `git revert <sha>`, merged
+like any other change; Argo CD then deploys the old state because Git says so.
+
+`git revert` is better than deleting the commit with a reset and a force push
+because it keeps the history complete and true: the bad release and its undo
+are both visible, with who did them and when. A force push would rewrite
+`main` under everyone who has cloned it, could break tags such as `v1.1.0`
+that point at those commits, and would hide what actually ran in the cluster.
 
 ### Q6. (a) One repository for chart and configuration: two advantages and two disadvantages. (b) What is not under GitOps control after the rebuild?
 
