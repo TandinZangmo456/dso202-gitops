@@ -5,6 +5,9 @@
 #               4.3.3 (health checks); Unit III 3.2 (Helm)
 # Purpose     : Deploys the Task Tracker Helm chart to the dev environment.
 #               Dev follows the tip of main and heals itself automatically.
+#               Task 10: multi-source. The chart and the values file are
+#               separate sources, so values could later move to their own
+#               repository without changing the chart source.
 # =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -22,19 +25,25 @@ metadata:
 spec:
   project: dso202
 
-  source:
-    repoURL: https://github.com/TandinZangmo456/dso202-gitops.git
-    # Dev tracks a moving reference: every merge to main is deployed.
-    targetRevision: main
-    path: charts/tasktracker
-    helm:
-      # Fixed release name, so that object names are identical in every
-      # environment; the namespace is what distinguishes them.
-      releaseName: tasktracker
-      # Paths are relative to the chart directory (charts/tasktracker), so two
-      # levels up reaches the repository root.
-      valueFiles:
-        - ../../environments/dev/values.yaml
+  # "sources" replaces "source"; an Application may not have both.
+  sources:
+    # Source 1: the chart. Dev tracks main, so every merge is deployed.
+    - repoURL: https://github.com/TandinZangmo456/dso202-gitops.git
+      targetRevision: main
+      path: charts/tasktracker
+      helm:
+        # Fixed release name, so that object names are identical in every
+        # environment; the namespace is what distinguishes them.
+        releaseName: tasktracker
+        # $values is the root of source 2, so the path starts at the repo
+        # root instead of "../../" from the chart directory.
+        valueFiles:
+          - $values/environments/dev/values.yaml
+    # Source 2: the same repository, used only as a source of values files.
+    # It has no path, so it renders nothing on its own.
+    - repoURL: https://github.com/TandinZangmo456/dso202-gitops.git
+      targetRevision: main
+      ref: values
 
   destination:
     server: https://kubernetes.default.svc
